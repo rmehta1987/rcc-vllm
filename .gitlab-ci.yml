@@ -1,0 +1,26 @@
+# Build the mkdocs user-guide site and publish it with GitLab Pages.
+#
+# Prerequisites on the git.rcc.uchicago.edu instance (check these if the job does
+# not run or the site does not appear):
+#   1. GitLab Pages must be enabled for this project (Settings > Pages).
+#   2. A CI/CD runner must be available (Settings > CI/CD > Runners); a job with
+#      no runner stays "pending" forever.
+#   3. That runner needs internet access to pull the image and install
+#      mkdocs-material. Compute nodes have no internet, but CI runners normally do.
+#
+# The job MUST be named `pages` and its output MUST land in `public/` for GitLab
+# Pages to serve it. After the first successful run, the public URL appears under
+# Settings > Pages.
+
+pages:
+  stage: deploy
+  image: python:3.12-slim
+  script:
+    - pip install --no-cache-dir "mkdocs-material==9.7.6"
+    - mkdocs build --strict --site-dir public
+  artifacts:
+    paths:
+      - public
+  rules:
+    # Publish only from the default branch.
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

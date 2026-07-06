@@ -30,3 +30,4 @@ benchmark/logs/
 
 # --- OS cruft ---
 .DS_Store
+public/

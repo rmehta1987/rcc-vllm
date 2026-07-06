@@ -1,0 +1,118 @@
+# Frequently asked questions
+
+This page collects the questions new users ask most often. If your question is about a
+specific client, the [Coding Sessions](coding/overview.md) pages and
+[Getting Started](getting-started.md) go into more depth; for charges see
+[Billing and Service Units](billing.md); for failures see
+[Troubleshooting](troubleshooting.md).
+
+## Access and cost
+
+### How do I get access?
+
+You need an RCC account with an allocation on the account the service runs under
+(`rcc-staff` in the current phase). Once you have that, you start a session with the
+wrapper scripts described in [Getting Started](getting-started.md). There is no separate
+signup step.
+
+### What will a session cost?
+
+Sessions are billed in Service Units (SU), where 1 SU is one A100-GPU-hour. You are charged
+the greater of two things: the GPUs you hold (`w_gpu × N × hours`) or the tokens you
+process. For interactive work the hold cost almost always dominates. The default coding
+session (Qwen2.5-Coder-32B on two A100 cards) costs 2.0 SU per hour. The full formula and
+the measured per-model rates are in [Billing and Service Units](billing.md).
+
+### How do I keep the cost down?
+
+Run `down` the moment you stop working. An idle session still holds its GPUs and still
+bills. For interactive use choose an A100 tier, which has the lowest hold cost; reserve the
+H200 tier for sustained, high-throughput generation where its speed pays for its higher
+hold cost.
+
+### Is my data private?
+
+Your prompts and the model's completions are served entirely on the cluster and are not
+sent to any outside provider. Your browser-chat history is stored in a private directory in
+your home folder that other users cannot read. One caveat: coding tools can have their own
+telemetry that is separate from the model service. The service disables that telemetry where
+it controls the configuration, but you should confirm the settings in any client you install
+yourself.
+
+## Connecting and sharing
+
+### How do I connect from my laptop?
+
+Open an SSH tunnel from your laptop to the login node your session is running on, then point
+your client at `http://localhost:<port>`. The exact tunnel command, with the right port and
+login node filled in, is printed when you run `connect` and is shown in
+[Getting Started](getting-started.md).
+
+### Can my lab share one session?
+
+Yes. The person who starts the session receives an access key. Share that key with your
+labmates; each of them opens their own SSH tunnel to the same login node and uses the key as
+their API key. Anyone without the key is refused. All usage bills to the person who started
+the session, so coordinate within the group on who runs it.
+
+### Which model should I use?
+
+Use Qwen2.5-Coder-32B for code, the Qwen2.5-72B general model for mixed prose-and-code work
+or when you specifically want the largest general model, and Qwen3-4B for quick or
+low-cost tasks. Once they are staged, a reasoning model suits math and multi-step planning,
+and a vision model handles images.
+
+## Coding agents, MCP, and building agents
+
+### Which coding tool should I use?
+
+aider is the dependable default for editing files and does not need tool-calling. opencode
+is supported for full tool-calling agents but requires a small workaround file (see
+[opencode and Cline](coding/opencode.md)). Continue is the choice for in-editor use inside
+VS Code or JetBrains.
+
+### My agent said it made a change, but nothing happened. Why?
+
+The Qwen2.5-Coder-32B model does not emit the tool-call markers that vLLM's parser expects,
+so tool calls can fail silently: the agent reports success but no file is edited. Use the
+`AGENTS.md` workaround documented on the [opencode](coding/opencode.md) page, or switch to
+the Qwen2.5-72B or Qwen3 model for agent work, which do not have this problem.
+
+### How do I add an MCP tool to my agent?
+
+Add an `mcp` block to a project-local `opencode.json` in your working directory, not to your
+personal configuration. Before you enable a server, read the agent-responsibility guidance:
+an MCP server runs with your full cluster permissions and can reach any file you can reach,
+including a labmate's files through shared project directories.
+
+### Can I build my own agent on these models?
+
+Yes. Point any OpenAI-compatible agent framework — for example PydanticAI, LangGraph,
+smolagents, or the OpenAI Agents SDK — at the gateway URL, using your session key as the API
+key. For reliable tool-calling, use the Qwen2.5-72B or Qwen3 model rather than the Coder
+model.
+
+## Common problems
+
+### My session sits in the queue and never starts.
+
+The GPUs you requested may be busy. A session waits for cards to free up, and the launcher
+gives up if it waits too long. Try a less-contended GPU tier or a smaller model.
+
+### My connection worked and then stopped.
+
+If the login node was rebooted, or your SSH session dropped, the gateway process can stop
+while the GPU session keeps running. Check your session with `status`; if the gateway is
+gone but the job is still listed, run `down` to release the GPUs and start again.
+
+### My home directory filled up.
+
+Browser-chat history is stored in your home directory, which has a smaller quota than
+project space. Clear old conversations in the chat interface, or remove old files under
+`$HOME/.ai-session/`.
+
+### I forgot to run `down` and was billed for idle time.
+
+An unused session bills its GPUs until its walltime limit. Always run `down` when you finish.
+If you routinely forget, ask the operators whether the idle-session reaper is enabled, which
+warns and then ends sessions that have gone quiet.

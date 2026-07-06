@@ -1,0 +1,41 @@
+{
+  "_comment": "litellm context/cost metadata for the locally-served vLLM models so aider stops warning 'Unknown context window size' and sizes prompts correctly. Coding sessions serve at 32K (run_coding_agent.sh MAX_MODEL_LEN=32768). Split leaves output headroom so prompt+max_tokens never overflows max-model-len. Cost is 0 here (billing is in SU, handled by the gateway/metering, not litellm). Keys are duplicated with and without the 'openai/' provider prefix because aider/litellm may look up either form.",
+
+  "openai/qwen2.5_coder_32B": {
+    "max_tokens": 4096,
+    "max_input_tokens": 28000,
+    "max_output_tokens": 4096,
+    "input_cost_per_token": 0,
+    "output_cost_per_token": 0,
+    "litellm_provider": "openai",
+    "mode": "chat"
+  },
+  "qwen2.5_coder_32B": {
+    "max_tokens": 4096,
+    "max_input_tokens": 28000,
+    "max_output_tokens": 4096,
+    "input_cost_per_token": 0,
+    "output_cost_per_token": 0,
+    "litellm_provider": "openai",
+    "mode": "chat"
+  },
+
+  "openai/qwen2.5_72B": {
+    "max_tokens": 4096,
+    "max_input_tokens": 28000,
+    "max_output_tokens": 4096,
+    "input_cost_per_token": 0,
+    "output_cost_per_token": 0,
+    "litellm_provider": "openai",
+    "mode": "chat"
+  },
+  "qwen2.5_72B": {
+    "max_tokens": 4096,
+    "max_input_tokens": 28000,
+    "max_output_tokens": 4096,
+    "input_cost_per_token": 0,
+    "output_cost_per_token": 0,
+    "litellm_provider": "openai",
+    "mode": "chat"
+  }
+}

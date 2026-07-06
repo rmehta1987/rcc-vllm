@@ -1,0 +1,64 @@
+# ai-session SU billing policy
+# ----------------------------------------------------------------------------
+# RCC-staff own this file. Changing a number here changes what users are
+# charged; the basis for every value is documented in ai-session/BILLING_POLICY.md.
+#
+# Currency convention (peer-anchored): 1 SU == 1 A100-GPU-hour.
+#   Published at NCSA Delta (UIUC / ACCESS -- the closest analog to UChicago
+#   RCC) and Purdue Anvil. SUs are an internal allocation currency, so no dollar
+#   figure is required.
+
+currency:
+  unit: SU
+  # How many SU one A100-GPU-hour costs. 1.0 makes A100 the reference anchor.
+  su_per_a100_gpu_hour: 1.0
+
+# GPU-tier cost multiplier w_gpu (NOT a performance index). Since
+# 1 A100-GPU-hour = 1 SU, A100 = 1.0; H200 = 3.0 means 1 H200-GPU-hour costs 3 SU.
+# Basis: NCSA Delta (A100=1.0, H200=3.0, A40 discounted), PSC Bridges-2 (H100=2.0),
+# TACC Lonestar6 (H100=2x A100-node), cross-checked against dense-BF16 TFLOPS and
+# list price (which agree closely except on Hopper, where price/scarcity exceeds
+# raw FLOPS). See BILLING_POLICY.md for the full table and per-tier rationale.
+w_gpu:
+  h200: 3.0      # NCSA Delta exact; price-basis 4.75, TFLOPS 3.17
+  h100: 2.0      # PSC + Lonestar SU convention (TFLOPS/price say 3.2-4.0)
+  l40s: 1.0      # TFLOPS 1.16 / price 1.13; Ada, bf16-capable
+  a100: 1.0      # reference anchor (A100-40GB)
+  a40:  0.5      # Delta "discounted"; TFLOPS 0.48 / price 0.50
+
+# Tiers excluded from Phase 1 because they are fp16-only (no bf16): some Qwen
+# models are numerically shakier and need --dtype half. Indicative weights are
+# noted only in case a future phase re-includes them.
+excluded_tiers:
+  v100:    0.35  # Volta, fp16-only
+  rtx6000: 0.30  # Turing (Quadro RTX 6000), fp16-only
+
+# Reservation floor.
+# The scheduler allocates exactly the requested GPUs (cons_tres; verified via
+# sacct 2026-07-03: AllocTRES == ReqTRES on all jobs to date) and cannot reclaim
+# them while held, so a session is charged the GREATER of work done or hardware held:
+#   SU(session) = max( sum token charges, w_gpu * N * reserved_wall_hours )
+# The floor uses the same w_gpu * N * hours = SU definition, so it is coherent.
+reservation_floor:
+  enabled: true
+
+edge_cases:
+  # Failed / 5xx requests carry no usage and are not billed.
+  bill_failed_requests: false
+  # Prefix caching (--enable-prefix-caching): bill full prompt_tokens from the
+  # authoritative usage field -- no cache discount in Phase 1 (vLLM reports the
+  # full prompt regardless of cache hits; matches OpenAI). A discount is a
+  # possible Phase-2 knob.
+  prefix_cache_discount: false
+  # Cancelled streaming requests: bill T_in fully (prefill happened) + tokens
+  # actually produced. Requires clients to set
+  # stream_options={"include_usage": true}; else fall back to the /metrics
+  # session delta. (Handled in metering.py; recorded here for transparency.)
+  bill_cancelled_stream_prefill: true
+
+# Optional dollar cost-recovery (only if SUs must map to $). Peer data puts an
+# unsubsidized A100-GPU-hour at ~$0.50-1.00 (OSC's subsidized $0.09 is a floor).
+# Left null in Phase 1 -- SUs are a pure internal currency.
+dollar_per_su: null
+
+policy_version: 1

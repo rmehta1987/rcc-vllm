@@ -1,0 +1,381 @@
+{
+  "schema_version": 1,
+  "status": "populated -- 5 record(s); last updated 2026-06-10T23:15:15-0500",
+  "currency": "1 SU = 1 A100-GPU-hour",
+  "record_schema": {
+    "model_key": "registry key, e.g. qwen2.5_72B (matches server.py agent_paths)",
+    "gpu_tier": "normalized tier: h200|h100|l40s|a100|a40",
+    "tp": "tensor-parallel size used when measured (int)",
+    "prefill_tps": "aggregate prefill throughput tok/s (from the prefill-heavy profile)",
+    "decode_tps": "aggregate decode throughput tok/s (from the decode-heavy profile)",
+    "alpha_empirical": "prefill_tps / decode_tps",
+    "ttft_p50_ms": "median time-to-first-token (balanced profile)",
+    "ttft_p95_ms": "p95 time-to-first-token",
+    "tpot_p50_ms": "median time-per-output-token",
+    "tpot_p95_ms": "p95 time-per-output-token",
+    "su_per_1k_in": "ILLUSTRATIVE at N=tp: w_gpu*tp*1000/(3600*prefill_tps). Metering recomputes from prefill_tps with the ACTUAL reserved N.",
+    "su_per_1k_out": "ILLUSTRATIVE at N=tp: w_gpu*tp*1000/(3600*decode_tps).",
+    "provenance": {
+      "vllm_version": "string",
+      "dtype": "bfloat16 (Phase 1 is bf16-only)",
+      "vllm_flags": "exact serve flags the rate was measured under (MUST match production)",
+      "profiles": "balanced / prefill-heavy / decode-heavy sweep params",
+      "metrics_crosscheck": "optional /metrics token-delta reconciliation",
+      "gpu_name": "raw nvidia-smi name",
+      "node": "slurm node",
+      "timestamp": "ISO8601 (stamped by bench_billing.py at write time)"
+    }
+  },
+  "records": [
+    {
+      "model_key": "qwen2.5_72B",
+      "gpu_tier": "a100",
+      "tp": 4,
+      "prefill_tps": 2901.16,
+      "decode_tps": 1122.71,
+      "alpha_empirical": 2.5841,
+      "ttft_p50_ms": 2169.8903411161155,
+      "ttft_p95_ms": 17558.890781365335,
+      "tpot_p50_ms": 96.50238063013263,
+      "tpot_p95_ms": 98.6872384615822,
+      "su_per_1k_in": 0.0003829881011916858,
+      "su_per_1k_out": 0.0009896715604658841,
+      "provenance": {
+        "vllm_version": "0.10.2",
+        "dtype": "bfloat16",
+        "w_gpu_at_measure": 1.0,
+        "serve_flags": [
+          "--served-model-name",
+          "qwen2.5_72B",
+          "--port",
+          "0",
+          "--tensor-parallel-size",
+          "4",
+          "--enable-prefix-caching",
+          "--trust-remote-code",
+          "--max-model-len",
+          "8192",
+          "--gpu-memory-utilization",
+          "0.9"
+        ],
+        "enforce_eager": false,
+        "max_model_len": 8192,
+        "gpu_memory_utilization": 0.9,
+        "gpu_name": "NVIDIA A100 80GB PCIe",
+        "node": "midway3-0377.rcc.local",
+        "profiles": {
+          "prefill_heavy": {
+            "name": "prefill_heavy",
+            "input_len": 2048,
+            "output_len": 8,
+            "num_prompts": 256,
+            "max_concurrency": 64
+          },
+          "decode_heavy": {
+            "name": "decode_heavy",
+            "input_len": 64,
+            "output_len": 1024,
+            "num_prompts": 128,
+            "max_concurrency": 64
+          },
+          "balanced": {
+            "name": "balanced",
+            "input_len": 1024,
+            "output_len": 512,
+            "num_prompts": 256,
+            "max_concurrency": 64
+          }
+        },
+        "seed": 1234,
+        "metrics_crosscheck": {
+          "metrics_prompt_tokens_delta": 796443.0,
+          "metrics_generation_tokens_delta": 265736.0,
+          "bench_input_tokens_sum": 793307,
+          "bench_output_tokens_sum": 264192,
+          "note": "deltas >= bench sums (warmup/probe requests add a little)"
+        },
+        "timestamp": "2026-06-02T14:23:03-0500"
+      }
+    },
+    {
+      "model_key": "qwen2.5_72B",
+      "gpu_tier": "h100",
+      "tp": 4,
+      "prefill_tps": 3787.33,
+      "decode_tps": 1810.5,
+      "alpha_empirical": 2.0919,
+      "ttft_p50_ms": 2601.5477299224585,
+      "ttft_p95_ms": 13132.914406945929,
+      "tpot_p50_ms": 45.84055890123234,
+      "tpot_p95_ms": 59.176362482302345,
+      "su_per_1k_in": 0.0005867509655684187,
+      "su_per_1k_out": 0.001227411276616408,
+      "provenance": {
+        "vllm_version": "0.10.2",
+        "dtype": "bfloat16",
+        "w_gpu_at_measure": 2.0,
+        "serve_flags": [
+          "--served-model-name",
+          "qwen2.5_72B",
+          "--port",
+          "0",
+          "--tensor-parallel-size",
+          "4",
+          "--enable-prefix-caching",
+          "--trust-remote-code",
+          "--max-model-len",
+          "8192",
+          "--gpu-memory-utilization",
+          "0.9"
+        ],
+        "enforce_eager": false,
+        "max_model_len": 8192,
+        "gpu_memory_utilization": 0.9,
+        "gpu_name": "NVIDIA H100 NVL",
+        "node": "midway3-0426.rcc.local",
+        "profiles": {
+          "prefill_heavy": {
+            "name": "prefill_heavy",
+            "input_len": 2048,
+            "output_len": 8,
+            "num_prompts": 256,
+            "max_concurrency": 64
+          },
+          "decode_heavy": {
+            "name": "decode_heavy",
+            "input_len": 64,
+            "output_len": 1024,
+            "num_prompts": 128,
+            "max_concurrency": 64
+          },
+          "balanced": {
+            "name": "balanced",
+            "input_len": 1024,
+            "output_len": 512,
+            "num_prompts": 256,
+            "max_concurrency": 64
+          }
+        },
+        "seed": 1234,
+        "metrics_crosscheck": {
+          "metrics_prompt_tokens_delta": 796443.0,
+          "metrics_generation_tokens_delta": 265736.0,
+          "bench_input_tokens_sum": 793307,
+          "bench_output_tokens_sum": 264192,
+          "note": "deltas >= bench sums (warmup/probe requests add a little)"
+        },
+        "timestamp": "2026-06-02T23:37:19-0500"
+      }
+    },
+    {
+      "model_key": "qwen2.5_72B",
+      "gpu_tier": "h200",
+      "tp": 2,
+      "prefill_tps": 7593.69,
+      "decode_tps": 2328.72,
+      "alpha_empirical": 3.2609,
+      "ttft_p50_ms": 2141.2659001071006,
+      "ttft_p95_ms": 6550.843215081841,
+      "tpot_p50_ms": 39.56440378640234,
+      "tpot_p95_ms": 42.542223817461085,
+      "su_per_1k_in": 0.00021948034616796973,
+      "su_per_1k_out": 0.0007157001415632654,
+      "provenance": {
+        "vllm_version": "0.10.2",
+        "dtype": "bfloat16",
+        "w_gpu_at_measure": 3.0,
+        "serve_flags": [
+          "--served-model-name",
+          "qwen2.5_72B",
+          "--port",
+          "0",
+          "--tensor-parallel-size",
+          "2",
+          "--enable-prefix-caching",
+          "--trust-remote-code",
+          "--max-model-len",
+          "8192",
+          "--gpu-memory-utilization",
+          "0.9"
+        ],
+        "enforce_eager": false,
+        "max_model_len": 8192,
+        "gpu_memory_utilization": 0.9,
+        "gpu_name": "NVIDIA H200",
+        "node": "midway3-0605.rcc.local",
+        "profiles": {
+          "prefill_heavy": {
+            "name": "prefill_heavy",
+            "input_len": 2048,
+            "output_len": 8,
+            "num_prompts": 256,
+            "max_concurrency": 64
+          },
+          "decode_heavy": {
+            "name": "decode_heavy",
+            "input_len": 64,
+            "output_len": 1024,
+            "num_prompts": 128,
+            "max_concurrency": 64
+          },
+          "balanced": {
+            "name": "balanced",
+            "input_len": 1024,
+            "output_len": 512,
+            "num_prompts": 256,
+            "max_concurrency": 64
+          }
+        },
+        "seed": 1234,
+        "metrics_crosscheck": {
+          "metrics_prompt_tokens_delta": 796443.0,
+          "metrics_generation_tokens_delta": 265736.0,
+          "bench_input_tokens_sum": 793307,
+          "bench_output_tokens_sum": 264192,
+          "note": "deltas >= bench sums (warmup/probe requests add a little)"
+        },
+        "timestamp": "2026-06-02T22:28:35-0500"
+      }
+    },
+    {
+      "model_key": "qwen2.5_coder_32B",
+      "gpu_tier": "a100",
+      "tp": 2,
+      "prefill_tps": 4772.81,
+      "decode_tps": 1679.03,
+      "alpha_empirical": 2.8426,
+      "ttft_p50_ms": 1363.1193418987095,
+      "ttft_p95_ms": 10902.237190399319,
+      "tpot_p50_ms": 65.86363952271567,
+      "tpot_p95_ms": 66.8828059477666,
+      "su_per_1k_in": 0.00011640007273588571,
+      "su_per_1k_out": 0.0003308797253787077,
+      "provenance": {
+        "vllm_version": "0.10.2",
+        "dtype": "bfloat16",
+        "w_gpu_at_measure": 1.0,
+        "serve_flags": [
+          "--served-model-name",
+          "qwen2.5_coder_32B",
+          "--port",
+          "0",
+          "--tensor-parallel-size",
+          "2",
+          "--enable-prefix-caching",
+          "--trust-remote-code",
+          "--max-model-len",
+          "32768",
+          "--gpu-memory-utilization",
+          "0.9"
+        ],
+        "enforce_eager": false,
+        "max_model_len": 32768,
+        "gpu_memory_utilization": 0.9,
+        "gpu_name": "NVIDIA A100 80GB PCIe",
+        "node": "midway3-0377.rcc.local",
+        "profiles": {
+          "prefill_heavy": {
+            "name": "prefill_heavy",
+            "input_len": 2048,
+            "output_len": 8,
+            "num_prompts": 256,
+            "max_concurrency": 64
+          },
+          "decode_heavy": {
+            "name": "decode_heavy",
+            "input_len": 64,
+            "output_len": 1024,
+            "num_prompts": 128,
+            "max_concurrency": 64
+          },
+          "balanced": {
+            "name": "balanced",
+            "input_len": 1024,
+            "output_len": 512,
+            "num_prompts": 256,
+            "max_concurrency": 64
+          }
+        },
+        "seed": 1234,
+        "metrics_crosscheck": {
+          "metrics_prompt_tokens_delta": 796443.0,
+          "metrics_generation_tokens_delta": 265736.0,
+          "bench_input_tokens_sum": 793307,
+          "bench_output_tokens_sum": 264192,
+          "note": "deltas >= bench sums (warmup/probe requests add a little)"
+        },
+        "timestamp": "2026-06-10T23:15:15-0500"
+      }
+    },
+    {
+      "model_key": "qwen3_4b",
+      "gpu_tier": "a100",
+      "tp": 1,
+      "prefill_tps": 20063.28,
+      "decode_tps": 4128.74,
+      "alpha_empirical": 4.8594,
+      "ttft_p50_ms": 384.0917788911611,
+      "ttft_p95_ms": 2619.6785427164286,
+      "tpot_p50_ms": 26.03918741777933,
+      "tpot_p95_ms": 26.49939569385828,
+      "su_per_1k_in": 1.3845086046769882e-05,
+      "su_per_1k_out": 6.727906209727211e-05,
+      "provenance": {
+        "vllm_version": "0.10.2",
+        "dtype": "bfloat16",
+        "w_gpu_at_measure": 1.0,
+        "serve_flags": [
+          "--served-model-name",
+          "qwen3_4b",
+          "--port",
+          "0",
+          "--tensor-parallel-size",
+          "1",
+          "--enable-prefix-caching",
+          "--trust-remote-code",
+          "--max-model-len",
+          "8192",
+          "--gpu-memory-utilization",
+          "0.9"
+        ],
+        "enforce_eager": false,
+        "max_model_len": 8192,
+        "gpu_memory_utilization": 0.9,
+        "gpu_name": "NVIDIA A100-PCIE-40GB",
+        "node": "midway3-0294.rcc.local",
+        "profiles": {
+          "prefill_heavy": {
+            "name": "prefill_heavy",
+            "input_len": 2048,
+            "output_len": 8,
+            "num_prompts": 256,
+            "max_concurrency": 64
+          },
+          "decode_heavy": {
+            "name": "decode_heavy",
+            "input_len": 64,
+            "output_len": 1024,
+            "num_prompts": 128,
+            "max_concurrency": 64
+          },
+          "balanced": {
+            "name": "balanced",
+            "input_len": 1024,
+            "output_len": 512,
+            "num_prompts": 256,
+            "max_concurrency": 64
+          }
+        },
+        "seed": 1234,
+        "metrics_crosscheck": {
+          "metrics_prompt_tokens_delta": 796443.0,
+          "metrics_generation_tokens_delta": 265736.0,
+          "bench_input_tokens_sum": 793307,
+          "bench_output_tokens_sum": 264192,
+          "note": "deltas >= bench sums (warmup/probe requests add a little)"
+        },
+        "timestamp": "2026-06-02T13:59:21-0500"
+      }
+    }
+  ]
+}

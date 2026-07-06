@@ -1,0 +1,50 @@
+# ai-session gateway as a systemd --user service (Restart=on-failure).
+#
+# Runs gateway.py -- the fixed-URL OpenAI-compatible reverse proxy in front of
+# the ephemeral vLLM backend -- under systemd instead of a bare `nohup`, so a
+# crash is restarted automatically and the process is tracked by name rather than
+# a PID file. It is a USER unit (per login user, no root), and it survives an SSH
+# drop only if user lingering is enabled (`loginctl enable-linger $USER`).
+#
+# Install (per user, once)::
+#
+#     mkdir -p ~/.config/systemd/user
+#     cp ai-session/systemd/ai-session-gateway.service ~/.config/systemd/user/
+#     systemctl --user daemon-reload
+#
+# The wrappers do this for you when you run them with GATEWAY_SUPERVISE=1; they
+# also write the environment file this unit reads. To drive it by hand, create
+# ~/.config/ai-session/gateway.env with these lines (mode 600 -- it holds the
+# per-session key)::
+#
+#     PYBIN=/project/rcc/mehta5/conda-envs/vllm-probe/bin/python
+#     GATEWAY_PY=/project/rcc/mehta5/vllm/ai-session/gateway.py
+#     GW_PORT=8443
+#     AISESSION_STATE_DIR=/project/rcc/mehta5/ai-session-state/<you>
+#     AISESSION_GATEWAY_KEY=<the per-session key>
+#
+# then::  systemctl --user start ai-session-gateway.service
+#         systemctl --user status ai-session-gateway.service
+#         journalctl --user -u ai-session-gateway.service -f
+#         systemctl --user stop ai-session-gateway.service
+
+[Unit]
+Description=ai-session gateway (OpenAI-compatible reverse proxy to the current vLLM session)
+After=network.target
+
+[Service]
+Type=simple
+# The wrapper (or you) writes this file before `systemctl --user start`. It
+# carries PYBIN, GATEWAY_PY, GW_PORT, AISESSION_STATE_DIR and the per-session
+# AISESSION_GATEWAY_KEY. Keep it mode 600 -- it contains the session key.
+EnvironmentFile=%h/.config/ai-session/gateway.env
+# `sh -c` so the env vars expand (systemd does not expand ${VAR} in the exec
+# path itself). The gateway binds 127.0.0.1 inside gateway.py.
+ExecStart=/bin/sh -c 'exec "$PYBIN" "$GATEWAY_PY" --host 127.0.0.1 --port "$GW_PORT"'
+Restart=on-failure
+RestartSec=2
+# The gateway is light async I/O; cap it so a bug cannot balloon on a login node.
+MemoryMax=1G
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,32 @@
+# --- Editor / tooling caches ---
+.aider*
+.pytest_cache/
+__pycache__/
+*.pyc
+.claude/
+
+# --- Generated site ---
+site/
+
+# --- Large binaries: model weights, container images, virtualenvs (NEVER commit) ---
+models/
+venv/
+*.sif
+apptainer_cache/
+apptainer_tmp/
+hf_cache/
+*_cache/
+
+# --- Runtime state, logs, and SECRETS (session keys, usage logs, gateway pointers) ---
+logs/
+ai-session/logs/
+benchmark/logs/
+*.log
+**/session_key
+**/api_keys.json
+**/upstream.json
+**/usage-*.jsonl
+**/*_summary.json
+
+# --- OS cruft ---
+.DS_Store

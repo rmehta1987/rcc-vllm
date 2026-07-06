@@ -1,0 +1,34 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "rcc/qwen2.5_coder_32B",
+  "small_model": "rcc/qwen2.5_coder_32B",
+  "share": "disabled",
+  "autoupdate": false,
+  "enabled_providers": ["rcc"],
+  "mcp": {
+    "flytetest": {
+      "type": "local",
+      "enabled": false,
+      "command": ["true"]
+    }
+  },
+  "provider": {
+    "rcc": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "RCC local vLLM",
+      "options": {
+        "baseURL": "http://localhost:8450/v1",
+        "apiKey": "<SESSION_KEY>"
+      },
+      "models": {
+        "qwen2.5_coder_32B": {
+          "name": "Qwen2.5 Coder 32B (local)",
+          "limit": {
+            "context": 32768,
+            "output": 8192
+          }
+        }
+      }
+    }
+  }
+}

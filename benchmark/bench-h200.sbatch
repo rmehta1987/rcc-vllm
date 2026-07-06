@@ -1,0 +1,13 @@
+#!/bin/bash
+#SBATCH --job-name=bench-h200
+#SBATCH --partition=test
+#SBATCH --account=rcc-staff
+#SBATCH --constraint=H200
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
+#SBATCH --time=00:30:00
+#SBATCH --output=/project/rcc/mehta5/vllm/benchmark/bench-h200-%j.log
+
+export GPU_TAG=h200
+source /project/rcc/mehta5/vllm/benchmark/bench-template.sh

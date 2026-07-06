@@ -1,0 +1,243 @@
+#!/bin/bash
+# ai-session -- the user-facing command for the RCC ai-session service.
+#
+# Users load this via `module load ai-session` and never see the install path.
+# Each verb wraps one of the existing operator scripts under $AISESSION_HOME:
+#
+#   ai-session chat      start a chat session (browser UI) with the general model
+#   ai-session code      start a coding session for aider / opencode / Continue
+#   ai-session fast      start a small, cheap chat session (quick answers)
+#   ai-session status    is a session running / still loading / stopped?
+#   ai-session connect   print client settings (URL, key, per-client commands)
+#   ai-session env       print `export AISESSION_*` lines for shell eval
+#   ai-session models    list the model presets
+#   ai-session stop      stop the session and print the usage charge
+#
+# chat/code/fast SUBMIT A GPU JOB and start the billing clock; everything else
+# is read-only. Presets map an intent name to a full serve config (model,
+# GPU count, GPU type) so users never set tensor-parallel or constraints;
+# operators can still override via MODEL/TP/CONSTRAINT/TIME/GW_PORT env vars,
+# which pass straight through to the underlying wrappers.
+set -euo pipefail
+
+# --- locate the install (module sets AISESSION_HOME; fall back to script path) -
+HOME_DIR=${AISESSION_HOME:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)}
+AS="$HOME_DIR/ai-session"
+PY=/project/rcc/mehta5/conda-envs/vllm-probe/bin/python
+
+U=$(whoami)
+UID_NUM=$(id -u)
+
+# Same defaults as the wrappers (run_coding_agent.sh / run_browser_demo.sh):
+# shared read-only install, per-user writable state, UID-derived gateway port.
+export AISESSION_STATE_DIR=${AISESSION_STATE_DIR:-/project/rcc/mehta5/ai-session-state/$U}
+GW_PORT=${GW_PORT:-$((8400 + UID_NUM % 90))}
+export GW_PORT
+
+KEYFILE="$AISESSION_STATE_DIR/logs/gateway/session_key"
+UPSTREAM="$AISESSION_STATE_DIR/logs/gateway/upstream.json"
+RUN_DIR="$AISESSION_STATE_DIR/run"
+ENVFILE="$HOME/.ai-session/env"
+
+usage() {
+  cat <<'EOF'
+usage: ai-session <command> [options]
+
+Start a session (holds GPUs; billing runs until you stop it):
+  chat            general chat in your browser        (Qwen2.5 72B)
+  code            coding session for aider/opencode   (Qwen2.5 Coder 32B)
+  fast            small, cheap chat session           (Qwen3 4B)
+    options:  --time HH:MM:SS   session time limit (default 02:00:00)
+              --model KEY       serve a specific model instead of the preset
+              --agent           (code) enable native tool-calling for agent
+                                clients such as opencode
+
+Use / inspect the running session:
+  status          is the session ready, still loading, or stopped?
+  connect         client settings: URL, access key, per-client commands
+  env             print `export AISESSION_BASE_URL/... ` lines; use as
+                      eval "$(ai-session env)"
+  models          list the model presets
+  receipt         re-print the newest billing receipt (or: receipt <file>)
+
+Finish:
+  stop            stop the session, free the GPUs, print the usage charge
+
+A session keeps costing while it is up, busy or idle -- run `ai-session stop`
+as soon as you are done.
+EOF
+}
+
+# --- preset -> serve config ---------------------------------------------------
+# TP (GPU count) per model; single source of truth for the presets. Operators
+# can still export MODEL/TP/CONSTRAINT directly to bypass this.
+tp_for_model() {
+  case "$1" in
+    qwen2.5_72B|llama3.1_70B) echo 4 ;;
+    qwen2.5_coder_32B)        echo 2 ;;
+    qwen3_4b|qwen2.5_0.5B)    echo 1 ;;
+    *) echo "" ;;
+  esac
+}
+
+# --- env file: the one place clients read the endpoint + key from --------------
+# Written after a session comes up and refreshed by `connect`/`env`. Mirrors
+# Sherlock's ~/.ollama_server pattern: clients reference {env:AISESSION_BASE_URL}
+# and {env:AISESSION_API_KEY} instead of hand-editing URLs and keys.
+write_env_file() {
+  local key="" model=""
+  [ -f "$KEYFILE" ] && key=$(cat "$KEYFILE" 2>/dev/null || true)
+  if [ -f "$UPSTREAM" ]; then
+    model=$("$PY" -c "import json;print(json.load(open('$UPSTREAM')).get('model_key') or '')" 2>/dev/null || true)
+  fi
+  mkdir -p "$HOME/.ai-session"; chmod 700 "$HOME/.ai-session"
+  ( umask 077; cat > "$ENVFILE" <<EOF
+# ai-session client settings -- written by \`ai-session\`, read by clients.
+# The URL is the same on a login node and on your laptop (after the tunnel).
+export AISESSION_BASE_URL="http://localhost:$GW_PORT/v1"
+export AISESSION_API_KEY="$key"
+export AISESSION_MODEL="$model"
+EOF
+  )
+  chmod 600 "$ENVFILE"
+}
+
+print_env() {
+  write_env_file
+  cat "$ENVFILE"
+}
+
+# --- start verbs ----------------------------------------------------------------
+parse_start_opts() {   # sets OPT_TIME OPT_MODEL OPT_AGENT from "$@"
+  OPT_TIME="" OPT_MODEL="" OPT_AGENT=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --time)  OPT_TIME=$2; shift 2 ;;
+      --model) OPT_MODEL=$2; shift 2 ;;
+      --agent) OPT_AGENT=1; shift ;;
+      *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
+    esac
+  done
+}
+
+apply_model_opt() {    # export MODEL/TP when --model was given
+  if [ -n "$OPT_MODEL" ]; then
+    export MODEL="$OPT_MODEL"
+    local tp; tp=$(tp_for_model "$OPT_MODEL")
+    if [ -n "$tp" ]; then export TP="$tp"; else
+      echo "NOTE: no preset GPU count for '$OPT_MODEL'; set TP=<n> yourself." >&2
+    fi
+  fi
+  [ -n "$OPT_TIME" ] && export TIME="$OPT_TIME"
+  return 0
+}
+
+do_chat() {
+  parse_start_opts "$@"
+  export MODEL=${MODEL:-qwen2.5_72B} TP=${TP:-4} CONSTRAINT=${CONSTRAINT:-A100}
+  apply_model_opt
+  bash "$AS/run_browser_demo.sh" up
+  write_env_file
+  post_up_note
+}
+
+do_fast() {
+  parse_start_opts "$@"
+  export MODEL=${MODEL:-qwen3_4b} TP=${TP:-1} CONSTRAINT=${CONSTRAINT:-A100}
+  apply_model_opt
+  bash "$AS/run_browser_demo.sh" up
+  write_env_file
+  post_up_note
+}
+
+do_code() {
+  parse_start_opts "$@"
+  [ "$OPT_AGENT" = "1" ] && export AGENT_CLIENT=1
+  apply_model_opt
+  bash "$AS/run_coding_agent.sh" up
+  write_env_file
+  post_up_note
+}
+
+post_up_note() {
+  cat <<EOF
+
+Client settings were saved to $ENVFILE. In any shell, load them with:
+
+  eval "\$(ai-session env)"
+
+then clients can use \$AISESSION_BASE_URL, \$AISESSION_API_KEY and
+\$AISESSION_MODEL directly. \`ai-session connect\` re-prints the full
+per-client setup at any time; \`ai-session stop\` ends the session.
+EOF
+}
+
+# --- status ---------------------------------------------------------------------
+do_status() {
+  local st model
+  # 1) the gateway's own answer (ready / loading / stopped)
+  if st=$(curl -sf --max-time 6 "http://127.0.0.1:$GW_PORT/status" 2>/dev/null); then
+    local state; state=$("$PY" -c "import json,sys;print(json.loads(sys.argv[1]).get('backend_state','?'))" "$st")
+    model=$("$PY" -c "import json,sys;print(json.loads(sys.argv[1]).get('model_key') or '-')" "$st")
+    case "$state" in
+      ready)      echo "session: READY  (model $model, URL http://localhost:$GW_PORT/v1)" ;;
+      loading)    echo "session: STARTING -- the model is still loading (typically a few minutes)."
+                  echo "         (model $model; run this command again to re-check)" ;;
+      no_backend) echo "session: none running (gateway is up but no model server is attached)" ;;
+      *)          echo "session: unknown state '$state'" ;;
+    esac
+  else
+    echo "session: none running (no gateway on port $GW_PORT)"
+  fi
+  # 2) access key
+  if [ -f "$KEYFILE" ]; then
+    echo "access key: set ($(cut -c1-6 "$KEYFILE")...; full value: ai-session connect)"
+  else
+    echo "access key: none"
+  fi
+  # 3) this user's session jobs (name <model>:<port>), without HPC noise
+  local rows
+  rows=$(squeue --me -h -o "%j|%T|%M|%L" 2>/dev/null | awk -F'|' '$1 ~ /^[A-Za-z0-9_.]+:[0-9]+$/' || true)
+  if [ -n "$rows" ]; then
+    echo "$rows" | while IFS='|' read -r name state up left; do
+      echo "server: ${name%%:*}  state=$state  up=$up  time-left=$left"
+    done
+  fi
+}
+
+# --- stop ----------------------------------------------------------------------
+do_stop() {
+  # Tear down whichever stack is running; the wrappers are idempotent, so if
+  # neither pidfile exists the coding `down` still meters + clears everything.
+  if [ -f "$RUN_DIR/browser_demo.pids" ]; then
+    bash "$AS/run_browser_demo.sh" down
+  else
+    bash "$AS/run_coding_agent.sh" down
+  fi
+  # the key is gone; rewrite the env file so stale credentials don't linger
+  write_env_file
+}
+
+# --- dispatch --------------------------------------------------------------------
+CMD=${1:-help}; shift || true
+case "$CMD" in
+  chat)     do_chat "$@" ;;
+  code)     do_code "$@" ;;
+  fast)     do_fast "$@" ;;
+  status)   do_status ;;
+  stop|down) do_stop ;;
+  connect)  write_env_file; "$PY" "$AS/ai_session.py" connect --gateway-port "$GW_PORT" "$@" ;;
+  env)      print_env ;;
+  receipt)  if [ $# -gt 0 ]; then "$PY" "$AS/print_su_receipt.py" "$@"
+            else "$PY" "$AS/print_su_receipt.py" --usage-dir "$AISESSION_STATE_DIR/logs/usage"; fi ;;
+  models)   cat <<'EOF'
+preset  command            model                    what it is for
+chat    ai-session chat    Qwen2.5 72B Instruct     general questions, writing, analysis
+code    ai-session code    Qwen2.5 Coder 32B        coding with aider/opencode/Continue
+fast    ai-session fast    Qwen3 4B                 quick answers at the lowest cost
+Any preset accepts --model KEY to serve a different registered model.
+EOF
+  ;;
+  help|-h|--help) usage ;;
+  *) echo "unknown command: $CMD" >&2; usage >&2; exit 2 ;;
+esac

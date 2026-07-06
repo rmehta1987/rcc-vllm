@@ -22,7 +22,7 @@ Two things must be true before Continue can work:
 
 | Step | Description | Command | Run on |
 |---|---|---|---|
-| 1 | Confirm a coding session and gateway are running (start one per [Coding Sessions](overview.md)) | `bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh status` | Login node |
+| 1 | Confirm a coding session and gateway are running (start one per [Coding Sessions](overview.md)) | `ai-session status` | Login node |
 | 2 | Open the SSH tunnel to the gateway port (laptop editors only) | `ssh -N -L <GW_PORT>:localhost:<GW_PORT> <cnetid>@<login-node>.rcc.uchicago.edu` | Local machine |
 | 3 | Install the Continue extension | Editor marketplace; no shell command | Local machine |
 | 4 | Add the model definition | Edit `~/.continue/config.yaml` (Step 4 below) | Local machine |
@@ -33,20 +33,19 @@ Continue only connects to a session; it never starts one. Check what is running 
 this costs nothing. Run this **on the login node**:
 
 ```bash
-bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh status
+ai-session status
 ```
 
-The report begins:
+A healthy session reports:
 
 ```
-== ai-session coding agent status  (user <user>, gateway port <GW_PORT>) ==
+session: READY  (model qwen2.5_coder_32B, URL http://localhost:<GW_PORT>/v1)
+access key: set (abc123...; full value: ai-session connect)
 ```
 
-Note the gateway port in that line: it is the `<GW_PORT>` used in every later step.
-A healthy session shows a URL under `-- gateway upstream --`, a `LISTEN` line under
-`-- listener on :<GW_PORT> --`, and your session job in the Slurm job table. If
-those sections read `(none)`, no session is up; start one per
-[Coding Sessions](overview.md).
+The port in the URL is the `<GW_PORT>` used in every later step. If the report
+says the session is still starting, wait and re-check; if it says none is
+running, start one per [Coding Sessions](overview.md).
 
 ## Step 2: Open the SSH tunnel (laptop editors only)
 
@@ -62,10 +61,10 @@ stays in the foreground:
 ssh -N -L <GW_PORT>:localhost:<GW_PORT> <cnetid>@<login-node>.rcc.uchicago.edu
 ```
 
-- Replace `<GW_PORT>` with the port printed by `up` (also shown by `status`).
+- Replace `<GW_PORT>` with the port shown by `ai-session status`.
 - Replace `<cnetid>` with your CNetID.
-- Replace `<login-node>` with the login node where you ran `up`. The tunnel command
-  printed by `up` already names the correct node.
+- Replace `<login-node>` with the login node where the session was started. The
+  tunnel command printed at start already names the correct node.
 
 Details and background are in the SSH tunnel section of
 [Coding Sessions](overview.md).
@@ -129,16 +128,16 @@ Older Continue versions read a JSON file instead:
 }
 ```
 
-- Replace `<GW_PORT>` with the port printed by `up`.
+- Continue reads a static config file, so the two placeholders are filled in with
+  literal values: `ai-session connect` prints this exact block with `<GW_PORT>`
+  and `<SESSION_KEY>` already substituted, ready to paste.
 - `allowAnonymousTelemetry: false` turns off Continue's own usage telemetry. This is
   a client-side setting independent of the model traffic, which never leaves RCC; the
   [data residency note on the home page](../index.md#data-residency) explains the
   distinction.
 - `apiBase` must include the `/v1` suffix.
-- Replace `<SESSION_KEY>` with the session access key `up` printed (also saved at
-  `<state-dir>/logs/gateway/session_key` and shown by `connect`). The gateway
-  requires it; a request without it is refused with HTTP 401. Only a hand-started
-  keyless gateway accepts any non-empty string. See
+- `<SESSION_KEY>` is the session access key minted at start. The gateway requires
+  it; a request without it is refused with HTTP 401. See
   [Coding Sessions](overview.md#the-session-access-key) for sharing it with your lab.
 - `model` must equal the model the session was started with; `qwen2.5_coder_32B` is
   the default. If you started the session with a different model, use that key here
@@ -159,14 +158,13 @@ session serves well.
 
 !!! tip "Leave tab-autocomplete disabled"
     Autocomplete fires on keystrokes and requires low latency. Single-stream
-    generation for the 32B model at TP=2 (tensor parallel: the model's weights
-    split across two GPUs) is approximately 66 ms per output token (median
-    time-per-output-token; billing benchmark of 2026-06-10, midway3-0377.rcc.local,
-    vLLM 0.10.2), which is not suitable for completion-as-you-type. If you want
-    autocomplete, run a separate small-model session with `qwen3_4b` for that
-    purpose only (see model selection on [Coding Sessions](overview.md)); it
-    reserves one A100 and bills a floor of 1.0 SU per hour (w_gpu 1.0, TP=1;
-    benchmarked 2026-06-02, midway3-0294.rcc.local, vLLM 0.10.2).
+    generation for the 32B model on its two GPUs is approximately 66 ms per output
+    token (median time-per-output-token; billing benchmark of 2026-06-10,
+    midway3-0377.rcc.local, vLLM 0.10.2), which is not suitable for
+    completion-as-you-type. If you want autocomplete, run a separate small-model
+    session with `qwen3_4b` for that purpose only (see model selection on
+    [Coding Sessions](overview.md)); it reserves one A100 and bills a floor of
+    1.0 SU per hour (benchmarked 2026-06-02, midway3-0294.rcc.local, vLLM 0.10.2).
 
 ## Connection failures
 

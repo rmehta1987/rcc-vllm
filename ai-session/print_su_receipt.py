@@ -96,14 +96,14 @@ def render_banner(summary_path: str) -> None:
     print(_BAR)
     print("  SU CHARGE -- this session")
     print(f"    BILLED : {b.get('billed_su', 0):.4f} SU      basis={b.get('basis', '?')}")
-    print(f"    model  : {b.get('model_key', '?')} / {b.get('gpu_tier', '?')} / "
-          f"TP={b.get('served_tp', '?')}   "
-          f"(N={b.get('n_gpus_billed', '?')} GPU, w_gpu={b.get('w_gpu', '?')})")
-    print(f"    usage  : reserved {b.get('reserved_wall_hours', '?')} h   "
+    print(f"    model  : {b.get('model_key', '?')} on "
+          f"{b.get('n_gpus_billed', '?')} x {b.get('gpu_tier', '?')} GPU"
+          f"   (weight {b.get('w_gpu', '?')} SU per GPU-hour)")
+    print(f"    usage  : held {b.get('reserved_wall_hours', '?')} h   "
           f"tokens in={b.get('total_input_tokens', 0)} "
           f"out={b.get('total_output_tokens', 0)} "
           f"({b.get('n_requests_billed', 0)} requests)")
-    print(f"    job    : {s.get('jobid', '?')}")
+    print(f"    session: {s.get('jobid', '?')}")
     print(f"    receipt: {summary_path}")
     print(_BAR)
 

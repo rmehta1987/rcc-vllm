@@ -1,5 +1,5 @@
 site_name: "ai-session User Guide — LLM sessions on UChicago RCC"
-site_description: "Slurm-launched vLLM sessions with an OpenAI-compatible gateway on UChicago RCC"
+site_description: "Local LLM sessions with an OpenAI-compatible gateway on UChicago RCC"
 site_url: "https://rmehta1987.github.io/rcc-vllm/"
 
 docs_dir: docs

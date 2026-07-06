@@ -493,7 +493,10 @@ def cmd_connect(args) -> int:
     node = node or session.get("node")
     port = session["port"]
     gw_host = args.gateway_host or os.uname().nodename
-    gw_port = args.gateway_port
+    # Default port must MATCH the wrappers' UID-derived scheme (8400 + uid % 90),
+    # else `connect` prints a URL no gateway is listening on. Precedence:
+    # explicit --gateway-port > exported GW_PORT > the derived per-user default.
+    gw_port = args.gateway_port or int(os.environ.get("GW_PORT") or (8400 + os.getuid() % 90))
     gw_url_oncluster = f"http://{gw_host}:{gw_port}/v1"
     gw_url_tunnel = f"http://localhost:{gw_port}/v1"
     # A live session mints a per-session access key at logs/gateway/session_key. The
@@ -535,18 +538,20 @@ def cmd_connect(args) -> int:
     print(f"   model                         : {model}")
     print(f"   api_key                       : {key}")
 
+    print("\n--- shell setup shared by the clients below (one command) ---")
+    print("   eval \"$(ai-session env)\"   # sets AISESSION_BASE_URL / AISESSION_API_KEY / AISESSION_MODEL")
+
     print("\n--- Open WebUI (general chat / docs; needs no tool-calling) ---")
     print("   # one-time, in a SEPARATE env on a login node (NOT vllm-probe):")
     print("   #   python -m venv ~/openwebui-env && source ~/openwebui-env/bin/activate && pip install open-webui")
-    print("   # the session key goes in OPENAI_API_KEY (or Settings > Connections > API Key):")
-    print(f"   OPENAI_API_BASE_URL={gw_url_tunnel} OPENAI_API_KEY={key} open-webui serve --port 3000")
+    print("   OPENAI_API_BASE_URL=$AISESSION_BASE_URL OPENAI_API_KEY=$AISESSION_API_KEY open-webui serve --port 3000")
     print("   # then browse http://localhost:3000 ; the model list will show:", model)
 
     meta = os.path.join(_HERE, "aider_model_metadata.json")
     print("\n--- aider (coding DEFAULT; robust with local models, no server-side tools needed) ---")
-    print("   # the session key goes in OPENAI_API_KEY; --analytics-disable stops aider's")
-    print("   # own telemetry (independent of the model traffic, which never leaves RCC):")
-    print(f"   OPENAI_API_BASE={gw_url_tunnel} OPENAI_API_KEY={key} \\")
+    print("   # --analytics-disable stops aider's own telemetry (independent of the model")
+    print("   # traffic, which never leaves RCC):")
+    print("   OPENAI_API_BASE=$AISESSION_BASE_URL OPENAI_API_KEY=$AISESSION_API_KEY \\")
     print(f"     aider --model openai/{model} --weak-model openai/{model} \\")
     print(f"       --model-metadata-file {meta} --edit-format diff --analytics-disable")
 
@@ -562,7 +567,8 @@ def cmd_connect(args) -> int:
     print("\n--- opencode (autonomous agent; supported, verified 2026-07-03 -- needs --agent-client) ---")
     print("   # project-local config in the repo you work in (your personal config is not touched):")
     print(f"   cp {os.path.join(_HERE, 'opencode.example.json')} ./opencode.json")
-    print(f"   #   then set baseURL to {gw_url_tunnel} and the apiKey field to the session key above")
+    print("   # it reads {env:AISESSION_BASE_URL} / {env:AISESSION_API_KEY} -- no editing;")
+    print("   #   load them into your shell first:  eval \"$(ai-session env)\"")
     print("   # add the AGENTS.md workaround file (exact content: CODING_AGENTS.md section 8);")
     print("   #   without it the model never emits the <tool_call> markers and tool calls")
     print("   #   silently do nothing (no error on either end).")
@@ -611,7 +617,8 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("connect", help="print client setup (gateway URL, tunnel, Open WebUI / aider / opencode)")
     c.add_argument("--jobid", default=None)
     c.add_argument("--gateway-host", default=None, help="host running gateway.py (default: this host)")
-    c.add_argument("--gateway-port", type=int, default=8080)
+    c.add_argument("--gateway-port", type=int, default=None,
+                   help="gateway port (default: $GW_PORT, else the per-user derived port)")
     c.add_argument("--gateway-key", default=None, help="must match AISESSION_GATEWAY_KEY if the gateway requires one")
     c.set_defaults(func=cmd_connect)
 

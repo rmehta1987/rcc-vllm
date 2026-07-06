@@ -10,9 +10,9 @@ specific client, the [Coding Sessions](coding/overview.md) pages and
 
 ### How do I get access?
 
-You need an RCC account with an allocation on the account the service runs under
-(`rcc-staff` in the current phase). Once you have that, you start a session with the
-wrapper scripts described in [Getting Started](getting-started.md). There is no separate
+You need an RCC account with membership in the group the service runs under
+(`rcc-staff` in the current phase). Once you have that, you load the module and start
+a session as described in [Getting Started](getting-started.md). There is no separate
 signup step.
 
 ### What will a session cost?
@@ -25,10 +25,10 @@ the measured per-model rates are in [Billing and Service Units](billing.md).
 
 ### How do I keep the cost down?
 
-Run `down` the moment you stop working. An idle session still holds its GPUs and still
-bills. For interactive use choose an A100 tier, which has the lowest hold cost; reserve the
-H200 tier for sustained, high-throughput generation where its speed pays for its higher
-hold cost.
+Run `ai-session stop` the moment you stop working. An idle session still holds its GPUs
+and still bills. For interactive use the standard A100 configurations have the lowest
+hold cost; the faster H200 configuration only pays for itself under sustained,
+high-throughput generation.
 
 ### Is my data private?
 
@@ -45,7 +45,7 @@ yourself.
 
 Open an SSH tunnel from your laptop to the login node your session is running on, then point
 your client at `http://localhost:<port>`. The exact tunnel command, with the right port and
-login node filled in, is printed when you run `connect` and is shown in
+login node filled in, is printed when you run `ai-session connect` and is shown in
 [Getting Started](getting-started.md).
 
 ### Can my lab share one session?
@@ -96,14 +96,16 @@ model.
 
 ### My session sits in the queue and never starts.
 
-The GPUs you requested may be busy. A session waits for cards to free up, and the launcher
-gives up if it waits too long. Try a less-contended GPU tier or a smaller model.
+The GPUs you requested may be busy. A session waits for cards to free up, and the start
+command gives up if it waits too long. Try a smaller model (`ai-session fast`), or try
+again later.
 
 ### My connection worked and then stopped.
 
 If the login node was rebooted, or your SSH session dropped, the gateway process can stop
-while the GPU session keeps running. Check your session with `status`; if the gateway is
-gone but the job is still listed, run `down` to release the GPUs and start again.
+while the GPU session keeps running. Check with `ai-session status`; if the gateway is
+gone but a server is still listed, run `ai-session stop` to release the GPUs and start
+again.
 
 ### My home directory filled up.
 
@@ -111,8 +113,9 @@ Browser-chat history is stored in your home directory, which has a smaller quota
 project space. Clear old conversations in the chat interface, or remove old files under
 `$HOME/.ai-session/`.
 
-### I forgot to run `down` and was billed for idle time.
+### I forgot to stop my session and was billed for idle time.
 
-An unused session bills its GPUs until its walltime limit. Always run `down` when you finish.
-If you routinely forget, ask the operators whether the idle-session reaper is enabled, which
-warns and then ends sessions that have gone quiet.
+An unused session bills its GPUs until its time limit expires. Always run
+`ai-session stop` when you finish. If you routinely forget, ask the operators whether
+the idle-session reaper is enabled, which warns and then ends sessions that have gone
+quiet.

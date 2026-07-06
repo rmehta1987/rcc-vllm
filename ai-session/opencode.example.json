@@ -17,8 +17,8 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "RCC local vLLM",
       "options": {
-        "baseURL": "http://localhost:8450/v1",
-        "apiKey": "<SESSION_KEY>"
+        "baseURL": "{env:AISESSION_BASE_URL}",
+        "apiKey": "{env:AISESSION_API_KEY}"
       },
       "models": {
         "qwen2.5_coder_32B": {

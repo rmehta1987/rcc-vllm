@@ -1,0 +1,22 @@
+#%Module1.0
+## ai-session modulefile (Environment Modules, Tcl)
+## Puts the ai-session command on PATH so users never type the install path.
+##
+## Source of truth: modulefiles/ai-session/1.0 in the rcc-vllm repo.
+## Install targets (symlink or copy from the repo -- never edit in place):
+##   Tier 1 (testing):    /project/rcc/mehta5/modulefiles/ai-session/1.0
+##   Tier 3 (production): /software/modulefiles/ai-session/1.0  (RCC-installed)
+
+proc ModulesHelp { } {
+    puts stderr "ai-session: local LLM sessions on RCC (vLLM + gateway + SU billing)."
+    puts stderr "Start a session, get an OpenAI-compatible URL, connect a client, stop it."
+    puts stderr "Commands: ai-session chat | code | fast | status | connect | env | models | stop"
+    puts stderr "Run `ai-session help` for details."
+}
+
+module-whatis "Local LLM serving on RCC: start a session, get an OpenAI-compatible URL, connect a client."
+
+set root /project/rcc/mehta5/vllm
+
+setenv        AISESSION_HOME $root
+prepend-path  PATH           $root/bin

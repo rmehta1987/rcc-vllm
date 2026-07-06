@@ -75,8 +75,8 @@ out of that path.
 
 - Do not paste SSH private keys, API tokens, passwords, or the session access
   key into a prompt, a file the agent reads, or a repository the agent edits.
-- The session access key that `up` prints authorizes billed GPU time on your
-  allocation. Treat it like a password: it lives at
+- The session access key printed when a session starts authorizes billed GPU
+  time on your allocation. Treat it like a password: it lives at
   `<state-dir>/logs/gateway/session_key` (mode 600), and you share it
   deliberately, not by leaving it in a file an agent will read. See
   [Coding Sessions](overview.md#the-session-access-key).
@@ -101,7 +101,7 @@ habits that keep a mistake small.
 ## Tool calling and the coder model
 
 Agents that use native tool calling depend on the served model emitting
-structured tool calls that vLLM can parse. vLLM's `hermes` tool-call parser does
+structured tool calls the serving engine can parse. The engine's `hermes` tool-call parser does
 **not** populate `tool_calls` for Qwen2.5-Coder-32B-Instruct (vLLM issue
 [#29192](https://github.com/vllm-project/vllm/issues/29192)): the tool JSON
 streams back as ordinary text and the agent silently does nothing, with no error
@@ -127,8 +127,8 @@ this shape include:
 - **smolagents** — small code-first agents from Hugging Face.
 - **OpenAI Agents SDK** — OpenAI's own agent framework, pointed at the gateway.
 
-A runnable, self-contained example lives at
-`/project/rcc/mehta5/vllm/examples/agent_pydantic.py`. It reads the gateway base
+A runnable, self-contained example ships with the service at
+`$AISESSION_HOME/examples/agent_pydantic.py`. It reads the gateway base
 URL and session key from `AISESSION_BASE_URL` and `AISESSION_API_KEY`, wraps the
 endpoint as a PydanticAI model, defines one trivial read-only tool
 (`count_words`) so tool calling is exercised end to end, and answers a single
@@ -144,18 +144,16 @@ virtual environment on a login node, then run the example:
 # 1. Start a tool-calling session (login node, in tmux or screen). Serve the
 #    72B, not the coder default -- the coder model does not emit tool calls (see
 #    the caveat above), so an agent pointed at it would silently do nothing.
-AGENT_CLIENT=1 MODEL=qwen2.5_72B \
-  bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh up
+ai-session code --agent --model qwen2.5_72B
 
 # 2. Create your own venv and install the framework (login node, has internet):
 python -m venv ~/agent-venv
 source ~/agent-venv/bin/activate
 pip install pydantic-ai
 
-# 3. Point the example at the gateway and run it:
-export AISESSION_API_KEY="<the session key up printed>"
-# export AISESSION_BASE_URL="http://localhost:<your GW_PORT>/v1"
-python /project/rcc/mehta5/vllm/examples/agent_pydantic.py
+# 3. Load the session's URL and key into the shell, then run the example:
+eval "$(ai-session env)"
+python "$AISESSION_HOME/examples/agent_pydantic.py"
 ```
 
 !!! warning "Default to qwen2.5_72B, not the coder model"

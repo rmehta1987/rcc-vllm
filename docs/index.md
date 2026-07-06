@@ -3,29 +3,49 @@
 ai-session is a local large-language-model service on the university's research
 computing cluster (RCC beagle3). Instead of sending data to a commercial provider,
 faculty and students run open Qwen models on the GPUs the university already has.
-You start a session, which is a job under Slurm (the cluster scheduler) serving an
-OpenAI-compatible API on a GPU compute node; you reach it through one stable
-gateway URL from a browser chat window or a coding tool; and when you stop it, the
-usage is charged back in internal Service Units (SU) — a fair-usage accounting
-unit, not dollars. The proven ways in are browser chat with Open WebUI
-([Getting Started](getting-started.md)) and command-line or in-editor coding tools
-([Coding Sessions](coding/overview.md)).
+You start a session, which serves a model on cluster GPUs behind an
+OpenAI-compatible API; you reach it through one stable gateway URL from a browser
+chat window or a coding tool; and when you stop it, the usage is charged back in
+internal Service Units (SU) — a fair-usage accounting unit, not dollars. The proven
+ways in are browser chat with Open WebUI ([Getting Started](getting-started.md))
+and command-line or in-editor coding tools ([Coding Sessions](coding/overview.md)).
+
+## The first five minutes
+
+From a login node:
+
+```bash
+module use /project/rcc/mehta5/modulefiles   # goes away once RCC installs the module centrally
+module load ai-session
+
+ai-session chat      # chat in your browser, or:
+ai-session code      # a coding session for aider / Continue / opencode
+
+ai-session status    # ready, still loading, or stopped?
+ai-session stop      # done -- free the GPUs and print the charge
+```
+
+Starting a session takes a few minutes while the model loads; the start command
+waits and then prints everything you need — the web address, the session access
+key, and (for laptops) the SSH command that makes the address reachable from your
+machine. The per-client details are on the pages under
+[Choose your path](#choose-your-path).
 
 ## How it works
 
-Three processes are involved:
+Three pieces are involved:
 
 ```
-client                    gateway (login node)           vLLM server (compute node)
-your laptop/login    ->   http://localhost:<port>/v1  -> http://<node>:<port>/v1
-(browser/aider/...)       stable URL, reverse proxy      ephemeral, GPU-backed, SU-billed
+client                     gateway (login node)           model server (GPU node)
+your laptop/login     ->   http://localhost:<port>/v1  -> moves every session
+(browser/aider/...)        stable URL, reverse proxy      GPU-backed, SU-billed
 ```
 
-- The **vLLM server** runs as a Slurm job on a GPU compute node and serves an
-  OpenAI-compatible HTTP API; its node and port change every session, and the
-  compute node has no inbound network route from outside the cluster.
+- The **model server** runs on a GPU node inside the cluster and serves an
+  OpenAI-compatible HTTP API. Its address changes every session, and it is not
+  reachable from outside the cluster.
 - The **gateway** is a reverse proxy on a login node at a fixed port; it exists
-  because the backend moves — it forwards to whatever vLLM server the current
+  because the backend moves — it forwards to whatever model server the current
   session is using, so the client sees one URL that does not change between
   sessions, and it records per-request token usage, which is the authoritative
   source for [billing](billing.md).
@@ -33,17 +53,14 @@ your laptop/login    ->   http://localhost:<port>/v1  -> http://<node>:<port>/v1
   against the gateway URL, over `localhost` on the login node or an SSH-forwarded
   port from your laptop.
 
-The launch scripts and the per-client configuration live on the pages listed
-under [Choose your path](#choose-your-path) below.
-
 ## Data residency
 
-The model executes on an RCC compute node. The gateway executes on an RCC login
+The model executes on an RCC GPU node. The gateway executes on an RCC login
 node. The client reaches the gateway over `localhost` or an SSH-forwarded port.
-Along this serving path — client to gateway to vLLM — no prompt, file content, or
-completion is transmitted to any service outside RCC. This is the operative
-difference from hosted assistants and is the reason the service is appropriate for
-unpublished or otherwise restricted code and data.
+Along this serving path — client to gateway to model server — no prompt, file
+content, or completion is transmitted to any service outside RCC. This is the
+operative difference from hosted assistants and is the reason the service is
+appropriate for unpublished or otherwise restricted code and data.
 
 !!! note "Coding-tool telemetry is a separate concern you control in your client"
     The statement above covers the serving path — the model traffic itself. The
@@ -58,16 +75,16 @@ unpublished or otherwise restricted code and data.
 
 ## Available models
 
-Model weights are staged under `/project/rcc/mehta5/vllm/models/`. The model key
-is the identifier you pass to the launch scripts and the name the API serves
-under. "TP" is the tensor-parallel size: the model's weights are split across
-that many GPUs, which serve each request together.
+Each preset picks a model and the right number and type of GPUs for it; you never
+configure GPUs yourself. The model key is the name the API serves under and the
+value you pass to `ai-session <preset> --model` when you want something other than
+the preset's default.
 
-| Model key | Weights | Use | Context (tokens) | Default configuration | License |
-|---|---|---|---:|---|---|
-| `qwen2.5_coder_32B` | Qwen2.5-Coder-32B-Instruct | Coding (default for coding sessions) | 32768 | TP=2, 2 x A100-80GB | Apache-2.0 |
-| `qwen2.5_72B` | Qwen2.5-72B-Instruct | General chat | 8192 | TP=4, 4 x A100-80GB | Qwen (Tongyi) community license |
-| `qwen3_4b` | Qwen3-4B | Small and fast; single GPU | 8192 | TP=1, 1 x A100 | Apache-2.0 |
+| Preset | Model key | Weights | Use | Context (tokens) | GPUs it runs on | License |
+|---|---|---|---|---:|---|---|
+| `code` | `qwen2.5_coder_32B` | Qwen2.5-Coder-32B-Instruct | Coding | 32768 | 2 x A100-80GB | Apache-2.0 |
+| `chat` | `qwen2.5_72B` | Qwen2.5-72B-Instruct | General chat | 8192 | 4 x A100-80GB | Qwen (Tongyi) community license |
+| `fast` | `qwen3_4b` | Qwen3-4B | Small and fast; lowest cost | 8192 | 1 x A100 | Apache-2.0 |
 
 A Qwen2.5-0.5B-Instruct checkpoint (Apache-2.0) is also staged for operator smoke
 tests, and a Meta-Llama-3.1-70B-Instruct checkpoint (Llama 3.1 Community License plus
@@ -77,24 +94,22 @@ Guidance on choosing between the served models is on the
 you serve these models to other people — attribution for the Qwen 72B model, the
 acknowledgment gate for Llama — are set out on the [model licenses](licenses.md) page.
 
-!!! note "Compute nodes have no internet access"
-    Only models pre-staged under `/project/rcc/mehta5/vllm/models/` can be
-    served; a session cannot download weights. New models are staged by the
-    operators on request.
+!!! note "GPU nodes have no internet access"
+    Only pre-staged models can be served; a session cannot download weights. New
+    models are staged by the operators on request.
 
 ## What it costs, in one line
 
 One SU equals one A100-GPU-hour, and the default coding session (Qwen2.5-Coder-32B
 on 2 x A100) costs 2.0 SU per hour held. A session is billed the greater of its
-metered token work and a reservation floor of `w_gpu x N_gpus x hours` — the
-weighted cost of the GPUs held for the session's wall-clock lifetime. The GPU
-weights, the full rate table with its benchmark provenance, and worked examples
-are on the [billing page](billing.md).
+metered token work and a reservation floor — the weighted cost of the GPUs held
+for the session's wall-clock lifetime, whether or not you are actively using them.
+The GPU weights, the full rate table with its benchmark provenance, and worked
+examples are on the [billing page](billing.md).
 
 !!! warning "A running session consumes SU whether or not you send requests"
     The floor is charged for the session's whole wall-clock lifetime. Stop your
-    session as soon as you finish working; each launch page gives the matching
-    stop command.
+    session with `ai-session stop` as soon as you finish working.
 
 !!! note "ai-session SUs are not RCC allocation Service Units"
     The RCC user guide states that jobs on beagle3 consume no RCC service
@@ -119,7 +134,6 @@ Two distinct support channels apply, depending on the question:
 
 - Questions about the service itself — sessions, models, connection problems
   beyond the [troubleshooting page](troubleshooting.md), and billing — go to the
-  ai-session operators: the RCC staff who maintain `/project/rcc/mehta5`.
-- Questions about the cluster — accounts, SSH access, Slurm, partitions, and
-  RCC allocations — go to the RCC help desk through the standard RCC support
-  channel.
+  ai-session operators: the RCC staff who maintain the service.
+- Questions about the cluster — accounts, SSH access, and RCC allocations — go
+  to the RCC help desk through the standard RCC support channel.

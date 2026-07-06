@@ -47,8 +47,10 @@ your laptop/login  ->  http://localhost:<port>/v1  -> http://<node>:<port>/v1
   billing.
 - The **coding tool** is configured once against the gateway URL.
 
-The helper script `ai-session/run_coding_agent.sh` starts the vLLM server and the
-gateway together (`up`), and stops both and reports the charge (`down`).
+The `ai-session` command (available after `module load ai-session`) starts the vLLM
+server and the gateway together (`ai-session code`), and stops both and reports the
+charge (`ai-session stop`). It wraps the helper script
+`ai-session/run_coding_agent.sh`, which operators can still run directly.
 
 ## 2. Prerequisites
 
@@ -65,18 +67,26 @@ gateway together (`up`), and stops both and reports the charge (`down`).
 - A git repository to edit. aider requires the working directory to be inside a git
   repository; run `git init` first if necessary.
 
-No environment activation is required to run `run_coding_agent.sh`; it calls the
-shared Python environment by absolute path.
+No environment activation is required; the commands call the shared Python
+environment by absolute path.
 
 ## 3. Procedure: start, use, stop
 
 Run these from a login node, inside `tmux` or `screen` so that an SSH disconnect does
 not terminate the gateway.
 
+Step 0 — put the `ai-session` command on your PATH (once per shell; when the module
+is centrally installed the `module use` line goes away):
+
+```bash
+module use /project/rcc/mehta5/modulefiles
+module load ai-session
+```
+
 Step 1 — start the session and gateway:
 
 ```bash
-bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh up
+ai-session code
 ```
 
 This submits the Slurm job, waits until the model is loaded (typically several
@@ -91,7 +101,7 @@ full form and an explanation of each flag).
 Step 3 — stop the session when finished:
 
 ```bash
-bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh down
+ai-session stop
 ```
 
 This meters the session, cancels the Slurm job (releasing the GPU), stops the
@@ -100,7 +110,7 @@ gateway, and prints the SU charge for the run.
 To check what is running at any time (no cost):
 
 ```bash
-bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh status
+ai-session status
 ```
 
 The GPU is reserved exclusively for the lifetime of the session and is billed for
@@ -109,13 +119,21 @@ stop working.
 
 ## 4. Connection parameters
 
-Every client uses the same four values. The port is derived from your user ID and is
-printed by `up` and `status`.
+Every client uses the same four values. After a session is up, one command loads
+them into your shell as environment variables:
+
+```bash
+eval "$(ai-session env)"
+```
+
+This sets `AISESSION_BASE_URL`, `AISESSION_API_KEY`, and `AISESSION_MODEL` (they are
+also written to `~/.ai-session/env`, mode 600). The snippets below reference these
+variables; `ai-session connect` prints the literal values if you need them.
 
 | Parameter | Value |
 |---|---|
-| Base URL | `http://localhost:<GW_PORT>/v1` |
-| API key | the session access key that `up` printed (see below) |
+| Base URL | `$AISESSION_BASE_URL` — `http://localhost:<GW_PORT>/v1`, port derived from your user ID |
+| API key | `$AISESSION_API_KEY` — the session access key that `ai-session code` printed (see below) |
 | Model name | `qwen2.5_coder_32B` (default) or `qwen2.5_72B`; must equal the model you started |
 | Context window | 32768 tokens for coding sessions (8192 for the default chat sessions) |
 
@@ -125,11 +143,12 @@ with `openai/`, for example `openai/qwen2.5_coder_32B`.
 
 ### The session access key
 
-`up` mints a random access key for the session and the gateway requires it on every
-request. `up` prints it in the READY block and saves it, readable only by you, at
-`<state-dir>/logs/gateway/session_key` (mode 600); `connect` and `status` (first six
-characters only) also show it. Use it as the API key (the `<SESSION_KEY>` placeholder)
-in every client below. A request without it is refused with HTTP 401.
+Starting a session mints a random access key and the gateway requires it on every
+request. `ai-session code` prints it in the READY block and saves it, readable only
+by you, at `<state-dir>/logs/gateway/session_key` (mode 600); `ai-session connect`
+and `ai-session status` (first six characters only) also show it, and
+`ai-session env` exports it as `AISESSION_API_KEY`. Use it as the API key in every
+client below. A request without it is refused with HTTP 401.
 
 The key is what lets you share one session with your lab. The gateway binds to
 `127.0.0.1` and accepts only requests carrying the key, so no one else on the shared
@@ -142,9 +161,9 @@ no `AISESSION_GATEWAY_KEY` is keyless, in which case any non-empty string works.
 
 ## 5. Remote access over SSH
 
-The gateway listens on `127.0.0.1:<GW_PORT>` on the login node where you ran `up`. To
-reach it from a coding tool on your laptop, forward that port. The exact command,
-with your login node filled in, is printed by `up`. Its form is:
+The gateway listens on `127.0.0.1:<GW_PORT>` on the login node where you started the
+session. To reach it from a coding tool on your laptop, forward that port. The exact
+command, with your login node filled in, is printed by `ai-session code`. Its form is:
 
 ```bash
 ssh -N -L <GW_PORT>:localhost:<GW_PORT> -J <user>@midway3.rcc.uchicago.edu <user>@<login-node>
@@ -160,12 +179,12 @@ aider drives the model through the chat-completions API and applies edits as tex
 (unified diffs or whole-file replacements). It does not depend on the model's
 function-calling support. It is the default client.
 
-The command printed by `up`, in full:
+The command printed by `ai-session code`, in full (after `eval "$(ai-session env)"`):
 
 ```bash
 cd /path/to/your/repo
-OPENAI_API_BASE=http://localhost:<GW_PORT>/v1 \
-OPENAI_API_KEY=<SESSION_KEY> \
+OPENAI_API_BASE=$AISESSION_BASE_URL \
+OPENAI_API_KEY=$AISESSION_API_KEY \
 /project/rcc/mehta5/aider-env/bin/aider \
   --model openai/qwen2.5_coder_32B \
   --weak-model openai/qwen2.5_coder_32B \
@@ -205,8 +224,8 @@ have not explicitly added; add files with `/add` only when you intend to edit th
 To make a single edit and exit, for example from a batch script:
 
 ```bash
-OPENAI_API_BASE=http://localhost:<GW_PORT>/v1 \
-OPENAI_API_KEY=<SESSION_KEY> \
+OPENAI_API_BASE=$AISESSION_BASE_URL \
+OPENAI_API_KEY=$AISESSION_API_KEY \
 /project/rcc/mehta5/aider-env/bin/aider \
   --model openai/qwen2.5_coder_32B \
   --weak-model openai/qwen2.5_coder_32B \
@@ -220,7 +239,7 @@ Standard input can be piped in, for example to analyze a job log:
 
 ```bash
 cat slurm-${SLURM_JOB_ID}.out | \
-OPENAI_API_BASE=http://localhost:<GW_PORT>/v1 OPENAI_API_KEY=<SESSION_KEY> \
+OPENAI_API_BASE=$AISESSION_BASE_URL OPENAI_API_KEY=$AISESSION_API_KEY \
 /project/rcc/mehta5/aider-env/bin/aider --model openai/qwen2.5_coder_32B \
   --weak-model openai/qwen2.5_coder_32B \
   --model-metadata-file /project/rcc/mehta5/vllm/ai-session/aider_model_metadata.json \
@@ -234,9 +253,12 @@ Continue is an editor extension. Install it from the VS Code or JetBrains
 marketplace, open the SSH tunnel ([Section 5](#5-remote-access-over-ssh)), and add a
 model definition pointing at the gateway.
 
-`~/.continue/config.yaml`. The `allowAnonymousTelemetry: false` line turns off
-Continue's own usage telemetry, which is a client concern separate from the model
-traffic (that never leaves RCC; see [Section 12](#12-data-residency)):
+`~/.continue/config.yaml`. Continue reads a static config file, so fill in the two
+literal values: `<GW_PORT>` is your gateway port and `<SESSION_KEY>` the access key
+— `ai-session connect` prints both, ready to paste. The
+`allowAnonymousTelemetry: false` line turns off Continue's own usage telemetry,
+which is a client concern separate from the model traffic (that never leaves RCC;
+see [Section 12](#12-data-residency)):
 
 ```yaml
 allowAnonymousTelemetry: false
@@ -341,14 +363,17 @@ for two independent reasons, both measured on 2026-07-03:
 Step 1 — start the session with tool calling enabled:
 
 ```bash
-AGENT_CLIENT=1 bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh up
+ai-session code --agent
 ```
 
-Step 2 — copy the proven configuration into the repository you will edit:
+Step 2 — copy the proven configuration into the repository you will edit, and load
+the endpoint and key into your shell (the config references them as environment
+variables, so there is nothing to edit in the file):
 
 ```bash
 cd /path/to/your/repo
-cp /project/rcc/mehta5/vllm/ai-session/opencode.example.json ./opencode.json
+cp "$AISESSION_HOME/ai-session/opencode.example.json" ./opencode.json
+eval "$(ai-session env)"
 ```
 
 The example is the exact file used in the verification:
@@ -373,8 +398,8 @@ The example is the exact file used in the verification:
       "npm": "@ai-sdk/openai-compatible",
       "name": "RCC local vLLM",
       "options": {
-        "baseURL": "http://localhost:8450/v1",
-        "apiKey": "<SESSION_KEY>"
+        "baseURL": "{env:AISESSION_BASE_URL}",
+        "apiKey": "{env:AISESSION_API_KEY}"
       },
       "models": {
         "qwen2.5_coder_32B": {
@@ -390,10 +415,11 @@ The example is the exact file used in the verification:
 }
 ```
 
-Adapt two things: replace `8450` in `baseURL` with the gateway port printed by
-`up`, and replace `flytetest` with the name of each MCP server in your personal
-`~/.config/opencode/opencode.json` (add one disabled entry per server; delete the
-`mcp` block if you have none). A project-local `opencode.json` is merged over your
+The `{env:...}` references resolve to the `AISESSION_BASE_URL` / `AISESSION_API_KEY`
+variables set by `eval "$(ai-session env)"` in Step 2, so the endpoint and key need
+no editing. Adapt one thing: replace `flytetest` with the name of each MCP server in
+your personal `~/.config/opencode/opencode.json` (add one disabled entry per server;
+delete the `mcp` block if you have none). A project-local `opencode.json` is merged over your
 personal configuration, so nothing personal is modified. `small_model` must point
 at the local provider: opencode otherwise sends session-title requests to an
 externally hosted model. `enabled_providers` restricts opencode to the local
@@ -474,13 +500,11 @@ the basis for the per-token charge, not single-stream latency.
 Overrides:
 
 ```bash
-# general 72B model on A100:
-MODEL=qwen2.5_72B TP=4 CONSTRAINT=A100 \
-  bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh up
+# general 72B model (chooses TP=4 A100 automatically):
+ai-session code --model qwen2.5_72B
 
-# coder model on the H200 throughput tier:
-MODEL=qwen2.5_coder_32B TP=2 CONSTRAINT=H200 \
-  bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh up
+# coder model on the H200 throughput tier (operator-style env override):
+CONSTRAINT=H200 ai-session code
 ```
 
 The coder model is the default because it is specialized for code, uses half the GPUs
@@ -543,10 +567,10 @@ appropriate for unpublished or otherwise restricted source code.
 |---|---|
 | `Unknown context window size` | The metadata file was not passed. Add `--model-metadata-file /project/rcc/mehta5/vllm/ai-session/aider_model_metadata.json`. The command printed by `up` already includes it. |
 | Prompt reported as too long | Added file content exceeds the 28000-token input budget. Remove files with `/drop` or clear history with `/clear`. |
-| aider rejects a diff edit | The model produced a malformed diff. Retry, or restart with `EDIT_FORMAT=whole bash .../run_coding_agent.sh up`. |
+| aider rejects a diff edit | The model produced a malformed diff. Retry, or restart with `EDIT_FORMAT=whole ai-session code`. |
 | Tool-call parse errors (opencode, Cline) | Expected for a locally served model. Confirm the session was started with `AGENT_CLIENT=1`; if errors persist, use aider. |
 | `model 'qwen2.5_coder_32B' is not fully staged` | The model weights are not completely on disk. Wait for staging to finish, or start with `MODEL=qwen2.5_72B`. |
-| Port already in use at `up` | Another session (yours or another user's) holds the default port. Choose another: `GW_PORT=8490 bash .../run_coding_agent.sh up`. |
+| Port already in use at start | Another session (yours or another user's) holds the default port. Choose another: `GW_PORT=8490 ai-session code`. |
 | Client cannot connect from laptop | The SSH tunnel is not open, or points at the wrong login node. Use the tunnel command printed by `up`, which names the correct node. |
 | Connection refused after working for a while | The SSH session that hosted the gateway closed. Restart with `up`, and run inside `tmux` to prevent recurrence. |
 

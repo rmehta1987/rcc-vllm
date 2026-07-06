@@ -10,14 +10,14 @@ described in Step 2, and occasional retries are needed even with them. aider rem
 the default and recommended client: it performs the same edits through the
 chat-completions API without function calling and needs no workarounds.
 
-Reliability status (verified 2026-07-03, opencode 1.14.41, Slurm job 51391003,
-`qwen2.5_coder_32B` at TP=2 on two A100-80GB, `AGENT_CLIENT=1`, vLLM 0.10.2 with
+Reliability status (verified 2026-07-03, opencode 1.14.41, session 51391003,
+`qwen2.5_coder_32B` on two A100-80GB with tool calling enabled, vLLM 0.10.2 with
 the `hermes` tool-call parser): three graded tasks — create a file, modify a
 function, and read a file then edit it based on the value read — passed 3 of 3
 through native tool calls. Out of the box, with a correct provider configuration
 but without the workaround files, 0 of 10 task runs passed: the served
 Qwen2.5-Coder-32B-Instruct checkpoint does not emit the `<tool_call>` marker tokens
-the vLLM parser matches, so the tool JSON streams back as plain text that opencode
+the parser matches, so the tool JSON streams back as plain text that opencode
 silently ignores (the server log shows zero parser exceptions; the failure is
 invisible on both ends). With the workaround files in place, 3 of 4 task runs
 passed on the first attempt and one needed a single retry. The session used 52
@@ -25,7 +25,7 @@ requests (249,551 prompt tokens, 3,289 completion tokens) over 28 min 53 s and w
 billed 0.9622 SU at the reservation floor.
 
 Because these agents need function calling, the session must be started with tool
-calling enabled (`AGENT_CLIENT=1`); a session started for aider or
+calling enabled (`ai-session code --agent`); a session started for aider or
 [Continue](continue.md) will not accept tool calls. For how sessions, the gateway,
 and SSH tunnels fit together, see [Coding Sessions](overview.md).
 
@@ -33,10 +33,10 @@ and SSH tunnels fit together, see [Coding Sessions](overview.md).
 
 | Step | Description | Command | Run on |
 |---|---|---|---|
-| 1 | Start a session with tool calling enabled | `AGENT_CLIENT=1 bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh up` | Login node |
+| 1 | Start a session with tool calling enabled | `ai-session code --agent` | Login node |
 | 2 | Install opencode, then create `opencode.json` and `AGENTS.md` in your repository (Step 2 below) | `curl -fsSL https://opencode.ai/install \| bash` | Laptop or login node (wherever opencode runs) |
 | 3 | Run opencode inside your git repository | `opencode` | Laptop or login node |
-| 4 | Stop the session when finished | `bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh down` | Login node |
+| 4 | Stop the session when finished | `ai-session stop` | Login node |
 
 ## Step 1: Start the session with tool calling enabled
 
@@ -44,45 +44,26 @@ Run this **on the login node**, inside `tmux` or `screen` so an SSH disconnect d
 not terminate the gateway:
 
 ```bash
-AGENT_CLIENT=1 bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh up
+ai-session code --agent
 ```
 
 !!! warning "A running session consumes SU whether or not you send requests"
     The reservation floor for the default configuration (Qwen2.5-Coder-32B, 2 A100
     GPUs) is 2.0 SU per hour; see [Billing](../billing.md). Stop with
-    `bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh down` as soon as
-    you finish.
+    `ai-session stop` as soon as you finish.
 
-`AGENT_CLIENT=1` starts the vLLM server with the additional serve flags
-`--enable-auto-tool-choice --tool-call-parser hermes`. The `hermes` parser is the one
-vLLM uses to extract tool calls from Qwen-model output. This switch controls only
-tool calling; the served context length is independent of it and stays at the coding
-default of 32768 tokens (`MAX_MODEL_LEN`).
+`--agent` starts the model server with tool calling enabled (the `hermes` parser,
+which extracts tool calls from Qwen-model output). This switch controls only tool
+calling; the served context length is independent of it and stays at the coding
+default of 32768 tokens.
 
-The equivalent direct CLI call, for scripting or non-default setups (this starts the
-session only; the wrapper additionally starts the gateway — see the
-[Command Reference](../reference.md)):
-
-```bash
-/project/rcc/mehta5/conda-envs/vllm-probe/bin/python \
-  /project/rcc/mehta5/vllm/ai-session/ai_session.py start \
-  --model qwen2.5_coder_32B --tp 2 --constraint A100 \
-  --max-model-len 32768 --agent-client --wait
-```
-
-`up` blocks until the model is loaded (typically several minutes for the 32B model)
-and then prints a block containing the gateway port (`GW_PORT`), the connection
-parameters, and the SSH tunnel command. Note the port; you need it in Step 2. Verify
-at any time (no cost):
+The command blocks until the model is loaded (typically several minutes for the
+32B model) and then prints a block containing the gateway port (`GW_PORT`), the
+connection parameters, and the SSH tunnel command. Note the port; you need it in
+Step 2. Verify at any time (no cost):
 
 ```bash
-bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh status
-```
-
-Expected output begins:
-
-```
-== ai-session coding agent status  (user <user>, gateway port <GW_PORT>) ==
+ai-session status
 ```
 
 ## Step 2: Configure opencode
@@ -96,7 +77,7 @@ curl -fsSL https://opencode.ai/install | bash
 
 This places the binary under `~/.opencode/bin/`. The npm alternative is
 `npm install -g opencode-ai`. If opencode runs on your laptop, open the SSH
-tunnel printed by `up` first so `localhost:<GW_PORT>` reaches the gateway (see
+tunnel printed at start first so `localhost:<GW_PORT>` reaches the gateway (see
 [Coding Sessions](overview.md)); on a login node no tunnel is needed.
 
 Two files must be placed in the repository you are editing: `opencode.json` (the
@@ -107,17 +88,19 @@ personal `~/.config/opencode/opencode.json`, so nothing personal is modified.
 
 ### opencode.json
 
-The verified example file lives on the cluster. If your repository is on the
-cluster, copy it (**on the login node**):
+The verified example file ships with the service. If your repository is on the
+cluster, copy it (**on the login node**, after `module load ai-session`), and
+load the endpoint and key into your shell — the file references them as
+environment variables, so there is nothing to edit for the connection:
 
 ```bash
 cd /path/to/your/repo
-cp /project/rcc/mehta5/vllm/ai-session/opencode.example.json ./opencode.json
+cp "$AISESSION_HOME/ai-session/opencode.example.json" ./opencode.json
+eval "$(ai-session env)"
 ```
 
-If your repository is on your laptop, the file is not directly reachable; create
-`opencode.json` in the repository root with exactly the following content, which
-reproduces the example file:
+If your repository is on your laptop, create `opencode.json` in the repository
+root with exactly the following content, which reproduces the example file:
 
 ```json title="opencode.json"
 {
@@ -139,8 +122,8 @@ reproduces the example file:
       "npm": "@ai-sdk/openai-compatible",
       "name": "RCC local vLLM",
       "options": {
-        "baseURL": "http://localhost:<GW_PORT>/v1",
-        "apiKey": "<SESSION_KEY>"
+        "baseURL": "{env:AISESSION_BASE_URL}",
+        "apiKey": "{env:AISESSION_API_KEY}"
       },
       "models": {
         "qwen2.5_coder_32B": {
@@ -156,11 +139,12 @@ reproduces the example file:
 }
 ```
 
-- Replace the port in `baseURL` with the `GW_PORT` printed by `up` (the example
-  file ships with port 8450, the port of the user who ran the verification).
-- Replace `<SESSION_KEY>` in `apiKey` with the session access key `up` printed (also
-  saved at `<state-dir>/logs/gateway/session_key` and shown by `connect`). The
-  gateway requires it; a request without it is refused with HTTP 401. See
+- The `{env:...}` references resolve from opencode's environment. On the login
+  node, `eval "$(ai-session env)"` sets both variables. On your laptop, export
+  them yourself with the values `ai-session connect` prints (the base URL is the
+  same `http://localhost:<GW_PORT>/v1` once the tunnel is open):
+  `export AISESSION_BASE_URL=... AISESSION_API_KEY=...`. The gateway requires the
+  key; a request without it is refused with HTTP 401. See
   [Coding Sessions](overview.md#the-session-access-key) for sharing it with your lab.
 - Replace `flytetest` with the name of each MCP server in your personal
   `~/.config/opencode/opencode.json`, one disabled entry per server; delete the
@@ -228,8 +212,8 @@ If your previous message in this conversation contains one of these mistakes,
 do NOT imitate it. Emit the correct, complete tags every single time.
 ```
 
-The same content is kept in section 8.3 of
-`/project/rcc/mehta5/vllm/ai-session/CODING_AGENTS.md`.
+The same content is kept in section 8.3 of the coding-agents guide that ships
+with the service (`$AISESSION_HOME/ai-session/CODING_AGENTS.md`).
 
 ### Run
 
@@ -250,23 +234,23 @@ if it recurs persistently, check that `AGENTS.md` is present and switch to
 
 Cline is a VS Code extension in the same class of tool: an autonomous agent driven
 by native tool calling. Configure it with the same three values — base URL
-`http://localhost:<GW_PORT>/v1`, API key the session access key `up` printed, model
-`qwen2.5_coder_32B` — against a session started with `AGENT_CLIENT=1`. Cline has not been verified
-against this service. The missing `<tool_call>` marker tokens (see Step 2) are a
-property of the served model, not of opencode, so Cline is expected to need an
-equivalent rules file; its mechanism is `.clinerules` rather than `AGENTS.md`.
-aider is the fallback.
+`http://localhost:<GW_PORT>/v1`, API key the session access key, model
+`qwen2.5_coder_32B` — against a session started with `ai-session code --agent`.
+Cline has not been verified against this service. The missing `<tool_call>` marker
+tokens (see Step 2) are a property of the served model, not of opencode, so Cline
+is expected to need an equivalent rules file; its mechanism is `.clinerules`
+rather than `AGENTS.md`. aider is the fallback.
 
 ## Step 3: Stop the session
 
 !!! warning "Stop the session as soon as you stop working"
-    A session is billed at least its reservation floor — GPU-tier weight times GPU
-    count times reserved wall-clock hours — regardless of request volume. Run `down`
-    (or `ai_session.py end`) immediately when you finish:
+    A session is billed at least its reservation floor — GPU-type weight times GPU
+    count times hours held — regardless of request volume. Run `ai-session stop`
+    immediately when you finish:
 
 ```bash
-bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh down
+ai-session stop
 ```
 
-This meters the session, cancels the Slurm job (releasing the GPUs), stops the
-gateway, and prints the SU charge for the run.
+This meters the session, releases the GPUs, stops the gateway, and prints the SU
+charge for the run.

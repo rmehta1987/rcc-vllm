@@ -37,6 +37,12 @@ benchmark/
   bench_billing.py     launch vllm serve in production config, run vllm bench serve over
                        three profiles, write rate_table.json
   bench_billing.sbatch per-tier wrapper (override constraint/gres/TP/model/MAX_MODEL_LEN)
+bin/
+  ai-session           user-facing dispatcher (chat/code/fast/status/connect/env/models/receipt/stop);
+                       on PATH via the modulefile. `aider` is symlinked here too.
+modulefiles/
+  ai-session/1.0       Tcl modulefile SOURCE (Environment Modules 4.6.1); deployed by symlink,
+                       see "User packaging" below
 ai-session/
   launch_ai_session.sh launch one vllm server as a Slurm job; prints a JSON line (jobid/port/...)
   server.py            model registry, squeue discovery, node->tier and job->GPU-count resolvers
@@ -53,6 +59,49 @@ ai-session/
   CODING_AGENTS.md     end-user coding guide (aider, Continue, opencode)
   print_su_receipt.py  render the SU-charge summary from a billing summary JSON (stdlib only)
 ```
+
+## User packaging: `module load ai-session`
+
+Users reach the service through an Environment Modules (Tcl) modulefile and a
+`bin/ai-session` dispatcher; they never type the install path. The user docs
+(GitHub Pages, source under `docs/`) are written exclusively against these
+commands.
+
+- Source of truth for the modulefile is `modulefiles/ai-session/1.0` in this
+  repository. The deployed copy is a symlink, so source and deployment cannot
+  drift:
+
+  ```
+  /project/rcc/mehta5/modulefiles/ai-session/1.0 -> /project/rcc/mehta5/vllm/modulefiles/ai-session/1.0
+  ```
+
+  Access tiers: Tier 1 (now, testing) — testers run
+  `module use /project/rcc/mehta5/modulefiles` then `module load ai-session` in
+  each shell. Tier 3 (production) — ask RCC to symlink the modulefile into
+  `/software/modulefiles`, after which plain `module load ai-session` works for
+  everyone. Deliberately no Tier 2 (`module use` in `~/.bashrc`): testers do it
+  by hand, everyone else waits for the central install.
+
+- The modulefile sets `AISESSION_HOME` (the repo root) and prepends
+  `$AISESSION_HOME/bin` to PATH. The dispatcher maps intent presets to serve
+  configs — `chat` = qwen2.5_72B TP=4 A100 (via run_browser_demo.sh),
+  `code` = qwen2.5_coder_32B TP=2 A100 (via run_coding_agent.sh, `--agent` sets
+  AGENT_CLIENT=1), `fast` = qwen3_4b TP=1 (browser stack) — and passes operator
+  env overrides (MODEL/TP/CONSTRAINT/TIME/GW_PORT/...) straight through to the
+  wrappers.
+
+- After a session comes up (and on `connect`/`env`), the dispatcher writes
+  `~/.ai-session/env` (mode 600): `AISESSION_BASE_URL`, `AISESSION_API_KEY`,
+  `AISESSION_MODEL`. Clients reference these instead of hand-edited values —
+  `opencode.example.json` uses `{env:AISESSION_BASE_URL}` /
+  `{env:AISESSION_API_KEY}`, the documented aider commands use
+  `$AISESSION_BASE_URL` / `$AISESSION_API_KEY`, and `examples/agent_pydantic.py`
+  reads the same two variables. `eval "$(ai-session env)"` loads them into a
+  shell.
+
+- `ai-session status` is user-facing: it asks the gateway's keyless `/status`
+  route (ready / loading / no_backend) rather than dumping squeue; the raw
+  wrapper `status` verbs remain for operators.
 
 ## Prerequisites
 

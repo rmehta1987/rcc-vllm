@@ -5,7 +5,7 @@ publisher attached to them. When you run a private session for yourself, you are
 licensee using the model. When you share your session's access key with labmates so
 they reach it over their own tunnels — the sharing model described on
 [Coding Sessions](coding/overview.md#the-session-access-key) and in the
-[command reference](reference.md#wrapper-environment-variables) — you are making the model
+[command reference](reference.md#the-session-access-key) — you are making the model
 available to other people, which is where the licenses differ. This page states, per
 model, what the license is, where its authoritative text sits on disk, and what you
 must do when you serve it to others. It is a practical summary, not legal advice; the
@@ -13,13 +13,16 @@ on-disk license file is the controlling text in every case.
 
 ## License at a glance
 
+In the table, `<models>` is the service's model store, `$AISESSION_HOME/models`
+after `module load ai-session`.
+
 | Model key | License | On-disk license file | What serving to others requires |
 |---|---|---|---|
-| `qwen2.5_coder_32B` | Apache-2.0 | `/project/rcc/mehta5/vllm/models/Qwen2.5-Coder-32B-Instruct/LICENSE` | Nothing beyond keeping the license and any `NOTICE` with redistributed weights. |
-| `qwen3_4b` | Apache-2.0 | `/project/rcc/mehta5/vllm/models/Qwen3-4B/LICENSE` | Same as above. |
-| `qwen2.5_0.5B` | Apache-2.0 | `/project/rcc/mehta5/vllm/models/Qwen2.5-0.5B-Instruct/LICENSE` | Same as above. |
-| `qwen2.5_72B` | Qwen (Tongyi) community license | `/project/rcc/mehta5/vllm/models/Qwen2.5-72B-Instruct/LICENSE` | Retain the Qwen attribution notice; observe the "Built with Qwen" and large-scale-use terms below. |
-| `llama3.1_70B` | Llama 3.1 Community License + Acceptable Use Policy | `/project/rcc/mehta5/vllm/models/Meta-Llama-3.1-70B-Instruct/LICENSE` and `.../USE_POLICY.md` | Provide the license, display "Built with Llama", follow the Acceptable Use Policy, and record acceptance via the [acknowledgment gate](#serving-llama-31-the-acknowledgment-gate). |
+| `qwen2.5_coder_32B` | Apache-2.0 | `<models>/Qwen2.5-Coder-32B-Instruct/LICENSE` | Nothing beyond keeping the license and any `NOTICE` with redistributed weights. |
+| `qwen3_4b` | Apache-2.0 | `<models>/Qwen3-4B/LICENSE` | Same as above. |
+| `qwen2.5_0.5B` | Apache-2.0 | `<models>/Qwen2.5-0.5B-Instruct/LICENSE` | Same as above. |
+| `qwen2.5_72B` | Qwen (Tongyi) community license | `<models>/Qwen2.5-72B-Instruct/LICENSE` | Retain the Qwen attribution notice; observe the "Built with Qwen" and large-scale-use terms below. |
+| `llama3.1_70B` | Llama 3.1 Community License + Acceptable Use Policy | `<models>/Meta-Llama-3.1-70B-Instruct/LICENSE` and `.../USE_POLICY.md` | Provide the license, display "Built with Llama", follow the Acceptable Use Policy, and record acceptance via the [acknowledgment gate](#serving-llama-31-the-acknowledgment-gate). |
 
 ## The Apache-2.0 models
 
@@ -87,18 +90,13 @@ Because these duties bind whoever offers the model, ai-session refuses to serve
 
 ### Serving Llama 3.1: the acknowledgment gate
 
-`llama3.1_70B` is not in the Phase-1 served set, so it is reachable only through
-`ai_session.py start --force`. On top of `--force`, the first attempt to serve it is
-refused until you record that you accept the license. This is a deliberate,
-non-interactive gate so that batch scripts can satisfy it once and proceed:
-
-```bash
-PY=/project/rcc/mehta5/conda-envs/vllm-probe/bin/python
-AIS=/project/rcc/mehta5/vllm/ai-session/ai_session.py
-
-ACCEPT_LLAMA_LICENSE=1 $PY $AIS start --model llama3.1_70B \
-    --tp 4 --constraint A100 --force --wait
-```
+`llama3.1_70B` is not in the served set, so it is reachable only through the
+advanced launcher's `--force` flag (an operator-level action; the launcher is
+documented in the operator guide). On top of `--force`, the first attempt to
+serve it is refused until you record that you accept the license. This is a
+deliberate, non-interactive gate so that scripts can satisfy it once and proceed:
+the serving command is refused until it is run with `ACCEPT_LLAMA_LICENSE=1` set in
+the environment.
 
 Setting `ACCEPT_LLAMA_LICENSE=1` writes a one-time acceptance record to your per-user
 state directory at `<state-dir>/logs/licenses/<user>_llama3.1_70B.accepted`. The
@@ -106,18 +104,9 @@ record holds the timestamp, your username, the model key, and the on-disk licens
 path you accepted. Once it exists, later starts reuse it and need no environment
 variable.
 
-Without the acknowledgment, and with no record already on file, `start` refuses
-before submitting any Slurm job and prints the license path and the variable to set:
-
-```
-'llama3.1_70B' is served under the Llama 3.1 Community License + Acceptable Use Policy.
-  On-disk license: /project/rcc/mehta5/vllm/models/Meta-Llama-3.1-70B-Instruct/LICENSE, /project/rcc/mehta5/vllm/models/Meta-Llama-3.1-70B-Instruct/USE_POLICY.md
-  Serving it to others carries obligations (see docs/licenses.md).
-  To accept and proceed non-interactively, set ACCEPT_LLAMA_LICENSE=1, e.g.:
-      ACCEPT_LLAMA_LICENSE=1 <your ai_session.py start ... --force command>
-  This writes a one-time acceptance record to <state-dir>/logs/licenses/<user>_llama3.1_70B.accepted;
-  it is required only the first time -- later starts reuse it.
-```
+Without the acknowledgment, and with no record already on file, the start is
+refused before any GPU is reserved, and the refusal prints the on-disk license
+paths and the variable to set.
 
 The Apache-2.0 models are permissive and are not gated; `qwen2.5_0.5B`, though also
 served only with `--force` (it is a smoke-test checkpoint, not a user model), needs no
@@ -127,14 +116,13 @@ its attribution obligation above still applies when you host it for others.
 ## Reading the authoritative text
 
 Every license summarized here is quoted in full in the on-disk file listed in the
-table. To read one directly on a login node, for example the Llama license and its
-Acceptable Use Policy:
+table. To read one directly on a login node (after `module load ai-session`), for
+example the Llama license and its Acceptable Use Policy:
 
 ```bash
-less /project/rcc/mehta5/vllm/models/Meta-Llama-3.1-70B-Instruct/LICENSE
-less /project/rcc/mehta5/vllm/models/Meta-Llama-3.1-70B-Instruct/USE_POLICY.md
+less "$AISESSION_HOME/models/Meta-Llama-3.1-70B-Instruct/LICENSE"
+less "$AISESSION_HOME/models/Meta-Llama-3.1-70B-Instruct/USE_POLICY.md"
 ```
 
 If in doubt about an obligation for your specific use, read the on-disk license, which
-controls, and raise questions about service policy with the ai-session operators (the
-RCC staff who maintain `/project/rcc/mehta5`).
+controls, and raise questions about service policy with the ai-session operators.

@@ -1,5 +1,56 @@
 # Changelog
 
+## 2026-07-07 — LoRA serving, `ai-session mcp`, `module load opencode`, de-jargon pass 2
+
+### LoRA adapter serving (new)
+
+- `ai-session chat|code|fast --lora NAME=PATH` (repeatable) serves a user's
+  PEFT/LoRA adapter alongside the base model; requests with `model=NAME` get the
+  adapter, `model=<base key>` the base. Every adapter is validated on the login
+  node before any GPU is reserved (`adapter_config.json` present, absolute
+  path, rank <= 256, warn on base-model mismatch); `MAX_LORA_RANK` is computed
+  from the adapters. `launch_ai_session.sh` gains env-gated `ENABLE_LORA` /
+  `LORA_MODULES` / `MAX_LORA_RANK` (flags `--enable-lora` / `--lora-modules` /
+  `--max-lora-rank`) and passes `--enable-lora ...` to `vllm serve`. Static
+  registration only; billing stance matches agent mode (floor-billed,
+  rate-table records unchanged). New user page `docs/lora.md`; operator section
+  in `ai-session/README.md`; training-path design in
+  `ai-session/LORA_TRAINING_DESIGN.md` (recommendation: recipe on the user's
+  own allocation first, managed `tune` verb only if demand shows).
+- Launcher fix: standalone `--tp N` now sizes the GPU request (`gpu:N`);
+  previously GRES was resolved before flag parsing, so `--tp 2` still reserved
+  4 GPUs. The `ai_session.py` production path always set GRES explicitly and
+  was not affected.
+
+### MCP access without paths (new)
+
+- `ai-session mcp run jobs|usage` execs the two read-only MCP servers with the
+  right interpreter and state directory; `ai-session mcp config` prints the
+  ready-to-paste opencode block. Agent configurations no longer contain any
+  install path or per-server environment block; `docs/coding/mcp.md` rewritten
+  accordingly.
+
+### opencode as a module (new)
+
+- Shared install `/project/rcc/mehta5/opencode/1.14.41/bin/opencode` (the
+  verified version) + repo modulefile `modulefiles/opencode/1.14.41`, deployed
+  as a symlink under `/project/rcc/mehta5/modulefiles/opencode/`. On the
+  cluster the docs now say `module load opencode`; the laptop install path
+  remains documented.
+
+### Docs
+
+- De-jargon pass 2 over the user pages: "gateway" occurrences roughly halved
+  and defined in passing where kept ("the small always-on relay on the login
+  node"); "reverse proxy" removed; "OpenAI-compatible" reduced to one defining
+  use per page; the serving software's name removed from user-flow prose;
+  remaining scheduler vocabulary cleared outside quoted output. New pages:
+  `docs/lora.md`; FAQ gains a support-contact entry; command reference gains
+  `--lora` and the `mcp` verbs.
+- `IMPLEMENTATION_ROADMAP.md`: status update + next-stage tiers (A: smoke/
+  reaper/Tier-3 install; B: embeddings, FIM, JSON mode, LoRA recipe; C:
+  reasoning/vision catalog; D: decision-gated).
+
 ## 2026-07-06 — module packaging, `ai-session` CLI, jargon-free user docs
 
 Implemented the plan in `HANDOFF_UX_DOCS.md`: packaging first, then the

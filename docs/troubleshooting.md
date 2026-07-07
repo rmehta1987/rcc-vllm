@@ -19,9 +19,9 @@ started the session.
 |---|---|---|
 | 1 | Is the session ready, still loading, or stopped? | `ai-session status` |
 | 2 | Confirm the gateway process is alive and knows its backend | `curl -sf http://127.0.0.1:<GW_PORT>/__gateway/health` |
-| 3 | Confirm the model server answers through the gateway | `eval "$(ai-session env)" && curl -s "$AISESSION_BASE_URL/models" -H "Authorization: Bearer $AISESSION_API_KEY"` |
+| 3 | Confirm the model server answers through the session URL | `eval "$(ai-session env)" && curl -s "$AISESSION_BASE_URL/models" -H "Authorization: Bearer $AISESSION_API_KEY"` |
 
-- Replace `<GW_PORT>` with your gateway port. The per-user default is
+- Replace `<GW_PORT>` with your port. The per-user default is
   `8400 + UID % 90`; print yours with `echo $((8400 + $(id -u) % 90))`.
 
 Step 1 answers the usual question directly: `READY` (with the model and URL),
@@ -29,8 +29,9 @@ Step 1 answers the usual question directly: `READY` (with the model and URL),
 also shows whether an access key is set and how long a running session has been
 up.
 
-Step 2 checks the gateway, the login-node reverse proxy that gives clients one
-stable URL while the backend changes every session. Expected output:
+Step 2 checks the gateway — the small always-on connection point the service
+runs on the login node. It gives clients one stable web address while the GPU
+session behind it changes. Expected output:
 
 ```
 {"gateway":"ok","backend_active":true}
@@ -170,7 +171,7 @@ ai-session code --model qwen2.5_72B
 Something is already listening on :<GW_PORT> (maybe a browser demo or another user).
 ```
 
-**Cause.** The gateway port defaults to `8400 + UID % 90`, derived from your user
+**Cause.** The port defaults to `8400 + UID % 90`, derived from your user
 ID so two users on one login node normally do not collide. The check trips when
 you already have a session up on this node (chat and coding sessions share the
 same default port; run one at a time), or when another user overrode their port
@@ -205,11 +206,11 @@ GW_PORT=8490 ai-session code
 `http://localhost:<GW_PORT>` although the [first checks](#first-checks) pass on
 the login node.
 
-**Cause.** The gateway listens on `127.0.0.1` on the specific login node where
-you started the session; it is not reachable from outside that node. Your laptop
-reaches it only through an SSH tunnel, and the tunnel must target that same login
-node. The usual causes are a tunnel that is not running, or a tunnel opened to a
-different login node than the one hosting the gateway.
+**Cause.** The session's web address is served on `127.0.0.1` on the specific
+login node where you started the session; it is not reachable from outside that
+node. Your laptop reaches it only through an SSH tunnel, and the tunnel must
+target that same login node. The usual causes are a tunnel that is not running,
+or a tunnel opened to a different login node than the one hosting your session.
 
 ??? question "What is an SSH tunnel?"
     An SSH tunnel (`ssh -L`) forwards a port on your laptop to a port on a
@@ -231,7 +232,7 @@ names the correct login node. Its form is:
 ssh -N -L <GW_PORT>:localhost:<GW_PORT> <cnetid>@<login-node>.rcc.uchicago.edu
 ```
 
-- Replace `<GW_PORT>` with your gateway port (both occurrences).
+- Replace `<GW_PORT>` with your port (both occurrences).
 - Replace `<cnetid>` with your CNetID.
 - Replace `<login-node>` with the login node named in the `READY` block — not an
   arbitrary login node.
@@ -246,8 +247,8 @@ refused; `curl -sf http://127.0.0.1:<GW_PORT>/__gateway/health` on the login nod
 fails.
 
 **Cause.** The gateway runs as a background process on the login node, started
-from the terminal where you started the session. When the SSH session hosting it
-closed (laptop sleep, network drop), the gateway died with it. The GPU session
+from the terminal where you started the session. When the SSH connection hosting it
+closed (laptop sleep, network drop), it died with that connection. The GPU session
 may still be running — and still billing.
 
 **Check.** `ai-session status` **on the login node**. A server still listed

@@ -3,10 +3,14 @@
 ai-session is a local large-language-model service on the university's research
 computing cluster (RCC beagle3). Instead of sending data to a commercial provider,
 faculty and students run open Qwen models on the GPUs the university already has.
-You start a session, which serves a model on cluster GPUs behind an
-OpenAI-compatible API; you reach it through one stable gateway URL from a browser
-chat window or a coding tool; and when you stop it, the usage is charged back in
-internal Service Units (SU) — a fair-usage accounting unit, not dollars. The proven
+Running the models here has three practical advantages over a cloud AI service:
+your prompts, code, and data never leave the university's systems, which matters
+for unpublished results; there is no subscription and no dollar charge — usage is
+accounted internally in Service Units (SU), a fair-usage unit, not money; and the
+served models are open-weights checkpoints you can name, pin, and reproduce in a
+paper. You start a session, which serves a model on cluster GPUs; you reach it
+through one stable web address from a browser chat window or a coding tool; and
+you stop it when you are done. The proven
 ways in are browser chat with Open WebUI ([Getting Started](getting-started.md))
 and command-line or in-editor coding tools ([Coding Sessions](coding/overview.md)).
 
@@ -38,25 +42,26 @@ Three pieces are involved:
 ```
 client                     gateway (login node)           model server (GPU node)
 your laptop/login     ->   http://localhost:<port>/v1  -> moves every session
-(browser/aider/...)        stable URL, reverse proxy      GPU-backed, SU-billed
+(browser/aider/...)        stable URL, relay              GPU-backed, SU-billed
 ```
 
-- The **model server** runs on a GPU node inside the cluster and serves an
-  OpenAI-compatible HTTP API. Its address changes every session, and it is not
-  reachable from outside the cluster.
-- The **gateway** is a reverse proxy on a login node at a fixed port; it exists
-  because the backend moves — it forwards to whatever model server the current
-  session is using, so the client sees one URL that does not change between
-  sessions, and it records per-request token usage, which is the authoritative
-  source for [billing](billing.md).
+- The **model server** runs on a GPU node inside the cluster and answers
+  requests in the standard OpenAI API format that most AI tools can talk to.
+  Its address changes every session, and it is not reachable from outside the
+  cluster.
+- The **gateway** is a small always-on relay on a login node at a fixed port;
+  it exists because the model server moves — it forwards to whichever server
+  the current session is using, so the client sees one web address that never
+  changes between sessions, and it records per-request token usage, which is
+  the authoritative source for [billing](billing.md).
 - The **client** — a browser chat window or a coding tool — is configured once
-  against the gateway URL, over `localhost` on the login node or an SSH-forwarded
+  against that address, over `localhost` on the login node or an SSH-forwarded
   port from your laptop.
 
 ## Data residency
 
 The model executes on an RCC GPU node. The gateway executes on an RCC login
-node. The client reaches the gateway over `localhost` or an SSH-forwarded port.
+node. The client reaches it over `localhost` or an SSH-forwarded port.
 Along this serving path — client to gateway to model server — no prompt, file
 content, or completion is transmitted to any service outside RCC. This is the
 operative difference from hosted assistants and is the reason the service is
@@ -85,6 +90,12 @@ the preset's default.
 | `code` | `qwen2.5_coder_32B` | Qwen2.5-Coder-32B-Instruct | Coding | 32768 | 2 x A100-80GB | Apache-2.0 |
 | `chat` | `qwen2.5_72B` | Qwen2.5-72B-Instruct | General chat | 8192 | 4 x A100-80GB | Qwen (Tongyi) community license |
 | `fast` | `qwen3_4b` | Qwen3-4B | Small and fast; lowest cost | 8192 | 1 x A100 | Apache-2.0 |
+
+A practical pattern is to start small and scale up: prototype your prompts,
+scripts, or agent setup against `ai-session fast` — the small model loads
+quickest, waits least for free GPUs, and has the lowest floor cost (1.0 SU per
+hour) — and move to the coder or 72B model once the workflow works. The larger
+models answer better; they do not need different client configuration.
 
 A Qwen2.5-0.5B-Instruct checkpoint (Apache-2.0) is also staged for operator smoke
 tests, and a Meta-Llama-3.1-70B-Instruct checkpoint (Llama 3.1 Community License plus
@@ -123,6 +134,7 @@ examples are on the [billing page](billing.md).
 |---|---|
 | Chat with a model in the browser (Open WebUI) | [Getting Started: Browser Chat](getting-started.md) |
 | Use a coding tool (aider, Continue, opencode) against your own repository | [Coding Sessions](coding/overview.md) |
+| Serve a model you fine-tuned yourself | [Your Own Fine-Tuned Model](lora.md) |
 
 The [command reference](reference.md) lists every command in one place, and
 [troubleshooting](troubleshooting.md) collects the known failure symptoms and

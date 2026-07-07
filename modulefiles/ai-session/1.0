@@ -10,7 +10,7 @@
 proc ModulesHelp { } {
     puts stderr "ai-session: local LLM sessions on RCC (vLLM + gateway + SU billing)."
     puts stderr "Start a session, get an OpenAI-compatible URL, connect a client, stop it."
-    puts stderr "Commands: ai-session chat | code | fast | status | connect | env | models | stop"
+    puts stderr "Commands: ai-session chat | code | fast | status | connect | env | models | receipt | mcp | stop"
     puts stderr "Run `ai-session help` for details."
 }
 

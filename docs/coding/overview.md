@@ -2,28 +2,32 @@
 
 A coding session serves a code-specialized language model on an RCC GPU node and
 connects it to a coding tool that reads and edits source code in your git
-repository. No prompt, file content, or completion leaves the cluster. The cost is
+repository. No prompt, file content, or completion leaves the cluster. The
+command-line tools (aider, opencode) are a natural fit for cluster work: they run
+in the terminal where your code already lives, over SSH, with no graphical
+display needed and no copy of the repository on your laptop. The cost is
 GPU reservation time, charged in Service Units (SU); 1 SU is 1 A100-GPU-hour (see
 [Billing and Service Units](../billing.md)).
 
 The command is `ai-session code`, the coding counterpart to the browser-chat
 `ai-session chat` on [Getting Started](../getting-started.md). The difference in
 shape: a coding tool is an interactive program you drive by hand, not a background
-server, so `ai-session code` starts the session and the gateway and then prints
+server, so `ai-session code` starts the session and the gateway — the small
+always-on connection point the service runs on the login node — and then prints
 the ready-to-run client command, which you run yourself in the repository you want
 to edit. The default client is aider; [Continue](continue.md) and
 [opencode and Cline](opencode.md) connect to the same endpoint. The stack is the
 same three pieces described on [AI Sessions on RCC](../index.md): a model server
-on a GPU node, a gateway (a reverse proxy on the login node that gives every
-session one stable OpenAI-compatible URL and records token counts for billing),
-and your client.
+on a GPU node, the gateway (which gives every session one stable web address in
+the standard OpenAI API format that most AI tools can talk to, and records token
+counts for billing), and your client.
 
 ## Quick Start
 
 | Step | Description | Command | Run on |
 |---|---|---|---|
 | 0 | Put `ai-session` on your PATH (once per shell) | `module use /project/rcc/mehta5/modulefiles && module load ai-session` | Login node |
-| 1 | Start the session and gateway; wait for the READY block and the printed client command | `ai-session code` | Login node |
+| 1 | Start the session; wait for the READY block and the printed client command | `ai-session code` | Login node |
 | 2 | Run the printed client command inside the git repository you want to edit | printed by `ai-session code` (aider by default) | Login node or Local machine |
 | 3 | Check what is running at any time; costs nothing | `ai-session status` | Login node |
 | 4 | Stop the session, free the GPUs, print the SU charge | `ai-session stop` | Login node |
@@ -31,7 +35,7 @@ and your client.
 ## Step 1: Start the session and gateway
 
 Run this **on the login node**, inside `tmux` or `screen`, so that an SSH
-disconnect does not terminate the gateway:
+disconnect does not take the connection point down with it:
 
 ```bash
 ai-session code
@@ -39,7 +43,7 @@ ai-session code
 
 The command starts the model server on cluster GPUs, waits until the model is
 loaded (typically several minutes for the default 32B model), starts the gateway,
-and prints a block containing the gateway port, the exact aider command, and the
+and prints a block containing the session's port, the exact aider command, and the
 SSH tunnel command for laptop access. Leave this terminal running.
 
 Options: `--time HH:MM:SS` sets the session time limit (default `02:00:00`; the
@@ -84,14 +88,14 @@ directories), and its actions and SU are your responsibility.
 To run the tool on your laptop instead of the login node, first open the SSH
 tunnel (next section).
 
-Verification — **on the login node**, confirm the gateway answers before starting
-the client (exits 0 when healthy):
+Verification — **on the login node**, confirm the connection point answers
+before starting the client (exits 0 when healthy):
 
 ```bash
 curl -sf "http://127.0.0.1:<GW_PORT>/__gateway/health"
 ```
 
-- Replace `<GW_PORT>` with the gateway port printed at start.
+- Replace `<GW_PORT>` with the port printed at start.
 
 ## Step 3: Stop the session
 
@@ -101,9 +105,10 @@ Run this **on the login node** the moment you stop working:
 ai-session stop
 ```
 
-It meters the session, releases the GPUs (stopping the clock), stops the gateway,
-and prints the itemized SU charge for the run as its last output. The same summary
-is written as a receipt file under your state directory. `ai-session stop` and
+It meters the session, releases the GPUs (stopping the clock), shuts down the
+connection point, and prints the itemized SU charge for the run as its last
+output. The same summary is written as a receipt file under your state
+directory. `ai-session stop` and
 `ai-session status` themselves cost nothing; only the running GPU session does.
 
 Verification — `ai-session status` afterwards reports no session running and no
@@ -130,20 +135,21 @@ values and ready-to-paste setup for every client.
 | Context window | 32768 tokens for coding sessions (8192 for chat sessions) |
 
 The model name is the identifier the server exposes. Clients that route through
-litellm (aider, Continue) prefix it with `openai/` to select the
-OpenAI-compatible protocol, for example `openai/qwen2.5_coder_32B`.
+litellm (aider, Continue) prefix it with `openai/` to select the standard
+format, for example `openai/qwen2.5_coder_32B`.
 
 ### The session access key
 
-Starting a session mints a random access key and the gateway requires it on every
-request. `ai-session code` prints it in the READY block and saves it, readable
-only by you, at `<state-dir>/logs/gateway/session_key` (mode 600);
+Starting a session mints a random access key, and every request to the session
+must carry it. `ai-session code` prints it in the READY block and saves it,
+readable only by you, at `<state-dir>/logs/gateway/session_key` (mode 600);
 `ai-session connect` and `ai-session status` (first six characters only) also show
 it. Use it as the API key in every client below.
 
-Because the gateway binds to `127.0.0.1` and accepts only requests carrying the key,
-no one else on the shared login node can use your session by accident, and you can
-deliberately share it with your lab: give a labmate the key, have them open their own
+Because the connection point binds to `127.0.0.1` and accepts only requests
+carrying the key, no one else on the shared login node can use your session by
+accident, and you can deliberately share it with your lab: give a labmate the
+key, have them open their own
 tunnel to your `GW_PORT`, and set the key as the API key in their client. All of
 their usage bills to you, the starter — one key per session, no per-person split. A
 request without the key is refused with HTTP 401. `ai-session stop` deletes the key
@@ -153,15 +159,15 @@ keyless, in which case any non-empty string works.
 
 ## Remote access from your laptop
 
-The gateway listens on `127.0.0.1:<GW_PORT>` on the login node where you started
-the session, so a client on your laptop needs a forwarded port. Run this **on your
-local machine** and leave it running:
+The connection point listens on `127.0.0.1:<GW_PORT>` on the login node where you
+started the session, so a client on your laptop needs a forwarded port. Run this
+**on your local machine** and leave it running:
 
 ```bash
 ssh -N -L <GW_PORT>:localhost:<GW_PORT> <cnetid>@<login-node>.rcc.uchicago.edu
 ```
 
-- Replace `<GW_PORT>` with the gateway port printed at start (both occurrences).
+- Replace `<GW_PORT>` with the port printed at start (both occurrences).
 - Replace `<cnetid>` with your CNetID.
 - Replace `<login-node>` with the login node named in the start output; the
   tunnel must target that node, not an arbitrary one.
@@ -186,8 +192,9 @@ GPU configuration is chosen for you.
 | `qwen2.5_72B` (H200 option) | 72B | 2 x H200 | 7594 | 2329 | 6.0 SU/h |
 
 Throughput figures are aggregate, measured by the billing benchmark at concurrency
-64 over prefill-heavy, decode-heavy, and balanced request mixes (vLLM 0.10.2,
-bfloat16; 32B measured 2026-06-10; 72B on both GPU types measured 2026-06-02).
+64 over prefill-heavy, decode-heavy, and balanced request mixes (model-server
+version 0.10.2, bfloat16; 32B measured 2026-06-10; 72B on both GPU types
+measured 2026-06-02).
 They are the basis of the per-token charge, not the latency one user perceives
 (next section). The reservation floor is the minimum charge for a session — the
 GPU-type weight times the number of GPUs times the hours held; a session bills the
@@ -224,10 +231,11 @@ across 64 concurrent requests.
 
 ## Build your own agent
 
-The listed clients are not the only way to use a session. Because the gateway
-exposes the OpenAI chat-completions protocol, you can write your own agent in any
-framework that targets an OpenAI-compatible endpoint (PydanticAI, LangGraph,
-smolagents, or the OpenAI Agents SDK), pointing it at `$AISESSION_BASE_URL` with
+The listed clients are not the only way to use a session. Because every session
+exposes the OpenAI chat-completions protocol at the session URL, you can write
+your own agent in any framework that speaks the standard format (PydanticAI,
+LangGraph, smolagents, or the OpenAI Agents SDK), pointing it at
+`$AISESSION_BASE_URL` with
 `$AISESSION_API_KEY` as the API key and a served model name (`qwen2.5_72B` or
 `qwen3_4b` for tool calling). A runnable, self-contained PydanticAI example ships
 with the service; the [Build your own agent](agents.md#build-your-own-agent)
@@ -235,7 +243,7 @@ section walks through it.
 
 Use `qwen2.5_72B` or `qwen3_4b`, not the coder model, for any tool-calling
 agent: the server's tool-call parser does not populate `tool_calls` for
-Qwen2.5-Coder-32B (vLLM #29192), so a custom agent pointed at the coder model
-runs but never calls your tools. Before running an autonomous agent, read
+Qwen2.5-Coder-32B (model-server bug #29192), so a custom agent pointed at the
+coder model runs but never calls your tools. Before running an autonomous agent, read
 [Agent responsibilities and risks](agents.md): it acts with your full cluster
 permissions and its actions are your responsibility.

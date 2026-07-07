@@ -26,15 +26,16 @@ billed 0.9622 SU at the reservation floor.
 
 Because these agents need function calling, the session must be started with tool
 calling enabled (`ai-session code --agent`); a session started for aider or
-[Continue](continue.md) will not accept tool calls. For how sessions, the gateway,
-and SSH tunnels fit together, see [Coding Sessions](overview.md).
+[Continue](continue.md) will not accept tool calls. For how sessions, the gateway
+(the connection point on the login node), and SSH tunnels fit together, see
+[Coding Sessions](overview.md).
 
 ## Quick Start
 
 | Step | Description | Command | Run on |
 |---|---|---|---|
 | 1 | Start a session with tool calling enabled | `ai-session code --agent` | Login node |
-| 2 | Install opencode, then create `opencode.json` and `AGENTS.md` in your repository (Step 2 below) | `curl -fsSL https://opencode.ai/install \| bash` | Laptop or login node (wherever opencode runs) |
+| 2 | Get opencode, then create `opencode.json` and `AGENTS.md` in your repository (Step 2 below) | `module load opencode` (login node) or `curl -fsSL https://opencode.ai/install \| bash` (laptop) | Wherever opencode runs |
 | 3 | Run opencode inside your git repository | `opencode` | Laptop or login node |
 | 4 | Stop the session when finished | `ai-session stop` | Login node |
 
@@ -58,7 +59,7 @@ calling; the served context length is independent of it and stays at the coding
 default of 32768 tokens.
 
 The command blocks until the model is loaded (typically several minutes for the
-32B model) and then prints a block containing the gateway port (`GW_PORT`), the
+32B model) and then prints a block containing the session's port (`GW_PORT`), the
 connection parameters, and the SSH tunnel command. Note the port; you need it in
 Step 2. Verify at any time (no cost):
 
@@ -68,16 +69,18 @@ ai-session status
 
 ## Step 2: Configure opencode
 
-opencode is not pre-installed; install it yourself on the machine where it will
-run (your laptop or a login node) with the official install script:
+On the cluster, opencode is provided as a module — the same mechanism as
+`ai-session` itself. **On the login node:**
 
 ```bash
-curl -fsSL https://opencode.ai/install | bash
+module load opencode
+opencode --version   # the service currently provides 1.14.41, the verified version
 ```
 
-This places the binary under `~/.opencode/bin/`. The npm alternative is
-`npm install -g opencode-ai`. If opencode runs on your laptop, open the SSH
-tunnel printed at start first so `localhost:<GW_PORT>` reaches the gateway (see
+If opencode runs on your laptop instead, install it there with the official
+script, `curl -fsSL https://opencode.ai/install | bash` (or
+`npm install -g opencode-ai`), and open the SSH tunnel printed at start first so
+`localhost:<GW_PORT>` reaches the session (see
 [Coding Sessions](overview.md)); on a login node no tunnel is needed.
 
 Two files must be placed in the repository you are editing: `opencode.json` (the
@@ -143,15 +146,15 @@ root with exactly the following content, which reproduces the example file:
   node, `eval "$(ai-session env)"` sets both variables. On your laptop, export
   them yourself with the values `ai-session connect` prints (the base URL is the
   same `http://localhost:<GW_PORT>/v1` once the tunnel is open):
-  `export AISESSION_BASE_URL=... AISESSION_API_KEY=...`. The gateway requires the
-  key; a request without it is refused with HTTP 401. See
+  `export AISESSION_BASE_URL=... AISESSION_API_KEY=...`. The key is required;
+  a request without it is refused with HTTP 401. See
   [Coding Sessions](overview.md#the-session-access-key) for sharing it with your lab.
 - Replace `flytetest` with the name of each MCP server in your personal
   `~/.config/opencode/opencode.json`, one disabled entry per server; delete the
   `mcp` block if you have none.
 
 What the entries do: the `rcc` provider block routes requests through the generic
-OpenAI-compatible adapter (`@ai-sdk/openai-compatible`) to the gateway URL with the
+OpenAI-compatible adapter (`@ai-sdk/openai-compatible`) to the session URL with the
 session access key; `model` and `small_model` both point at the local model, so no
 request leaves the cluster (opencode's default `small_model`, used for session
 titles, is an externally hosted model); `enabled_providers` makes the local provider
@@ -163,7 +166,7 @@ sizes its prompts correctly.
 The `mcp` block matters more than it looks: MCP servers from your personal
 configuration are advertised to the model as extra tools and inflate every prompt.
 In the 2026-07-03 verification, one personal MCP server pushed the first request to
-27,925 input tokens; vLLM rejected it (HTTP 400: input plus the 8,192-token output
+27,925 input tokens; the server rejected it (HTTP 400: input plus the 8,192-token output
 budget exceed the 32,768 context) and opencode surfaced no error at all.
 
 ### AGENTS.md
@@ -171,7 +174,7 @@ budget exceed the 32,768 context) and opencode surfaced no error at all.
 Create `AGENTS.md` in the repository root with exactly the following content.
 Reason: the served Qwen2.5-Coder-32B-Instruct checkpoint does not generate the
 `<tool_call>` / `</tool_call>` marker tokens (vocabulary ids 151657 and 151658)
-that vLLM's `hermes` parser matches — at temperature 0 the tags are simply
+that the model server's `hermes` parser matches — at temperature 0 the tags are simply
 omitted — so without this file the tool JSON streams back as plain text that
 opencode ignores. The rules file instructs the model to write the tags as ordinary
 characters, spelled out piece by piece; written that way, the tags survive

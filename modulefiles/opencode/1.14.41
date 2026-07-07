@@ -1,0 +1,28 @@
+#%Module1.0
+## opencode modulefile (Environment Modules, Tcl)
+## Terminal coding agent, served by the local ai-session models.
+##
+## Source of truth: modulefiles/opencode/1.14.41 in the rcc-vllm repo.
+## Install targets (symlink or copy from the repo -- never edit in place):
+##   Tier 1 (testing):    /project/rcc/mehta5/modulefiles/opencode/1.14.41
+##   Tier 3 (production): /software/modulefiles/opencode/1.14.41  (RCC-installed)
+##
+## The binary is the single-file release install at
+## /project/rcc/mehta5/opencode/<version>/bin/opencode. This version (1.14.41)
+## is the one the ai-session tool-tag workaround (AGENTS.md) was validated
+## against; when upgrading, install the new version side by side under a new
+## version directory + modulefile, re-run the opencode live checks, and only
+## then retire this one.
+
+proc ModulesHelp { } {
+    puts stderr "opencode: a terminal coding agent."
+    puts stderr "Use with the local models: module load ai-session; ai-session code --agent;"
+    puts stderr "then run `opencode` in a project directory with an opencode.json"
+    puts stderr "(`ai-session connect` prints one). Docs: https://rmehta1987.github.io/rcc-vllm/"
+}
+
+module-whatis "opencode terminal coding agent (pairs with ai-session local models)"
+
+conflict opencode
+
+prepend-path PATH /project/rcc/mehta5/opencode/1.14.41/bin

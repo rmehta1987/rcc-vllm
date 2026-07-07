@@ -51,6 +51,9 @@ Start a session (holds GPUs; billing runs until you stop it):
               --model KEY       serve a specific model instead of the preset
               --agent           (code) enable native tool-calling for agent
                                 clients such as opencode
+              --lora NAME=PATH  also serve your fine-tuned adapter (LoRA);
+                                repeatable. Requests that set model=NAME get
+                                the adapter; model=<base key> gets the base.
 
 Use / inspect the running session:
   status          is the session ready, still loading, or stopped?
@@ -59,6 +62,10 @@ Use / inspect the running session:
                       eval "$(ai-session env)"
   models          list the model presets
   receipt         re-print the newest billing receipt (or: receipt <file>)
+  mcp config      print the config block that gives a coding agent the two
+                  built-in tool servers (job queue, usage) -- see the docs
+  mcp run NAME    run one of the tool servers (agents call this; not for
+                  interactive use). NAME is jobs or usage.
 
 Finish:
   stop            stop the session, free the GPUs, print the usage charge
@@ -108,13 +115,14 @@ print_env() {
 }
 
 # --- start verbs ----------------------------------------------------------------
-parse_start_opts() {   # sets OPT_TIME OPT_MODEL OPT_AGENT from "$@"
-  OPT_TIME="" OPT_MODEL="" OPT_AGENT=0
+parse_start_opts() {   # sets OPT_TIME OPT_MODEL OPT_AGENT OPT_LORA from "$@"
+  OPT_TIME="" OPT_MODEL="" OPT_AGENT=0 OPT_LORA=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --time)  OPT_TIME=$2; shift 2 ;;
       --model) OPT_MODEL=$2; shift 2 ;;
       --agent) OPT_AGENT=1; shift ;;
+      --lora)  OPT_LORA="${OPT_LORA:+$OPT_LORA }$2"; shift 2 ;;
       *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
   done
@@ -132,10 +140,56 @@ apply_model_opt() {    # export MODEL/TP when --model was given
   return 0
 }
 
+apply_lora_opt() {     # validate --lora NAME=PATH pairs, export the LoRA env
+  [ -z "$OPT_LORA" ] && return 0
+  # Validate every adapter before submitting anything (a bad path would waste a
+  # GPU reservation: the server dies on load and the floor still bills). Checks:
+  # NAME=PATH shape, no spaces in the path (LORA_MODULES is space-separated),
+  # adapter_config.json present, and NAME not colliding with a served model key.
+  # Also computes MAX_LORA_RANK: the largest adapter r, rounded up to a size
+  # vLLM accepts. Warns (does not fail) if the adapter was trained on a base
+  # that does not match the model being served.
+  local rank
+  rank=$("$PY" - "$OPT_LORA" "${MODEL:-}" <<'PYEOF'
+import json, os, sys
+pairs, served = sys.argv[1].split(), sys.argv[2]
+max_r = 8
+for pair in pairs:
+    if "=" not in pair:
+        sys.exit(f"--lora expects NAME=PATH, got: {pair}")
+    name, path = pair.split("=", 1)
+    if not name or not path.startswith("/"):
+        sys.exit(f"--lora {pair}: NAME must be non-empty and PATH absolute")
+    cfg_path = os.path.join(path, "adapter_config.json")
+    if not os.path.isfile(cfg_path):
+        sys.exit(f"--lora {name}: no adapter_config.json under {path} "
+                 "(expected a PEFT/LoRA adapter directory)")
+    cfg = json.load(open(cfg_path))
+    r = int(cfg.get("r", 8))
+    max_r = max(max_r, r)
+    base = cfg.get("base_model_name_or_path", "")
+    if served and base:
+        b, s = base.lower().replace("-", "").replace("_", ""), served.lower().replace("-", "").replace("_", "")
+        if s.replace(".", "")[:8] not in b.replace(".", ""):
+            print(f"WARNING: adapter '{name}' was trained on '{base}', "
+                  f"but this session serves '{served}'. Outputs may be poor.",
+                  file=sys.stderr)
+for cap in (8, 16, 32, 64, 128, 256):
+    if max_r <= cap:
+        print(cap); break
+else:
+    sys.exit(f"adapter rank {max_r} exceeds the supported maximum (256)")
+PYEOF
+  ) || exit 2   # the validator already printed the reason on stderr
+  export ENABLE_LORA=1 LORA_MODULES="$OPT_LORA" MAX_LORA_RANK="$rank"
+  echo "==> serving LoRA adapter(s): $OPT_LORA (max rank $rank)"
+}
+
 do_chat() {
   parse_start_opts "$@"
   export MODEL=${MODEL:-qwen2.5_72B} TP=${TP:-4} CONSTRAINT=${CONSTRAINT:-A100}
   apply_model_opt
+  apply_lora_opt
   bash "$AS/run_browser_demo.sh" up
   write_env_file
   post_up_note
@@ -145,6 +199,7 @@ do_fast() {
   parse_start_opts "$@"
   export MODEL=${MODEL:-qwen3_4b} TP=${TP:-1} CONSTRAINT=${CONSTRAINT:-A100}
   apply_model_opt
+  apply_lora_opt
   bash "$AS/run_browser_demo.sh" up
   write_env_file
   post_up_note
@@ -153,7 +208,10 @@ do_fast() {
 do_code() {
   parse_start_opts "$@"
   [ "$OPT_AGENT" = "1" ] && export AGENT_CLIENT=1
+  # mirror run_coding_agent.sh's defaults so the LoRA base-model check sees them
+  export MODEL=${MODEL:-qwen2.5_coder_32B} TP=${TP:-2} CONSTRAINT=${CONSTRAINT:-A100}
   apply_model_opt
+  apply_lora_opt
   bash "$AS/run_coding_agent.sh" up
   write_env_file
   post_up_note
@@ -205,6 +263,42 @@ do_status() {
   fi
 }
 
+# --- mcp: the built-in agent tool servers ---------------------------------------
+# `mcp run` execs a stdio JSON-RPC server, so stdout must stay protocol-clean:
+# print nothing before exec on that path. Running through this verb (instead of
+# the script paths directly) pins the right interpreter AND inherits the
+# AISESSION_STATE_DIR exported above, so the usage server finds the receipts
+# without any per-client environment block.
+do_mcp() {
+  local sub=${1:-config}; shift || true
+  case "$sub" in
+    run)
+      case "${1:-}" in
+        jobs)  exec "$PY" "$AS/mcp/slurm_mcp.py" ;;
+        usage) exec "$PY" "$AS/mcp/su_usage_mcp.py" ;;
+        *) echo "usage: ai-session mcp run {jobs|usage}" >&2; exit 2 ;;
+      esac ;;
+    config)
+      cat <<'EOF'
+Add this "mcp" block to the opencode.json in your project directory (merge it
+with the existing contents; see the MCP page of the docs):
+
+  "mcp": {
+    "jobs":  { "type": "local", "enabled": true,
+               "command": ["ai-session", "mcp", "run", "jobs"] },
+    "usage": { "type": "local", "enabled": true,
+               "command": ["ai-session", "mcp", "run", "usage"] }
+  }
+
+Other agents (Cline, Claude Code, ...) declare a local stdio server with the
+same two facts: command `ai-session`, arguments `mcp run jobs` (or `usage`).
+The shell the agent starts from must have run `module load ai-session`.
+EOF
+      ;;
+    *) echo "usage: ai-session mcp {config|run jobs|run usage}" >&2; exit 2 ;;
+  esac
+}
+
 # --- stop ----------------------------------------------------------------------
 do_stop() {
   # Tear down whichever stack is running; the wrappers are idempotent, so if
@@ -230,6 +324,7 @@ case "$CMD" in
   env)      print_env ;;
   receipt)  if [ $# -gt 0 ]; then "$PY" "$AS/print_su_receipt.py" "$@"
             else "$PY" "$AS/print_su_receipt.py" --usage-dir "$AISESSION_STATE_DIR/logs/usage"; fi ;;
+  mcp)      do_mcp "$@" ;;
   models)   cat <<'EOF'
 preset  command            model                    what it is for
 chat    ai-session chat    Qwen2.5 72B Instruct     general questions, writing, analysis

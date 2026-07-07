@@ -57,6 +57,7 @@ nav:
       - MCP Servers: coding/mcp.md
       - Agent responsibilities and risks: coding/agents.md
   - Billing and Service Units: billing.md
+  - Your Own Fine-Tuned Model: lora.md
   - Model licenses: licenses.md
   - FAQ: faq.md
   - Troubleshooting: troubleshooting.md

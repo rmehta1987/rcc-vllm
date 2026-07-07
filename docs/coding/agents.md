@@ -91,6 +91,7 @@ habits that keep a mistake small.
 
 | Guardrail | Why |
 |---|---|
+| Start in a read-only or planning mode on an unfamiliar project | Let the agent explain what it would change before it can change anything; most tools have an ask/plan/architect mode for exactly this. |
 | Review every diff before accepting it | The agent can edit more, or differently, than you intended; you are accountable for what you accept. |
 | Work on a scratch copy or a throwaway git branch | A branch or copy makes an unwanted change trivial to discard and protects your only copy of the work. |
 | Keep a human in the loop for shell and delete actions | File deletion, `rm`, and command execution are the actions with the least reversible consequences. |
@@ -102,7 +103,8 @@ habits that keep a mistake small.
 
 Agents that use native tool calling depend on the served model emitting
 structured tool calls the serving engine can parse. The engine's `hermes` tool-call parser does
-**not** populate `tool_calls` for Qwen2.5-Coder-32B-Instruct (vLLM issue
+**not** populate `tool_calls` for Qwen2.5-Coder-32B-Instruct (a known upstream
+issue in the serving software,
 [#29192](https://github.com/vllm-project/vllm/issues/29192)): the tool JSON
 streams back as ordinary text and the agent silently does nothing, with no error
 on either side. Use `qwen2.5_72B` or `qwen3_4b` for any agent, MCP, or
@@ -115,9 +117,10 @@ usable with tool-calling agents, and why it is fragile.
 ## Build your own agent
 
 You can write your own agent whose reasoning engine is a model you serve through
-the ai-session gateway. Because the gateway speaks the OpenAI chat-completions
-protocol, any framework that targets an OpenAI-compatible endpoint works: point
-it at your gateway base URL (`http://localhost:<GW_PORT>/v1`), pass the session
+the ai-session gateway — the connection point on the login node. Because the
+gateway speaks the standard OpenAI API format that most AI tools can talk to,
+any framework that targets an OpenAI-compatible endpoint works: point
+it at your session's base URL (`http://localhost:<GW_PORT>/v1`), pass the session
 access key as the API key, and set the model name to the key your session serves
 (`qwen2.5_72B`, `qwen3_4b`, or another served model). Frameworks verified to fit
 this shape include:
@@ -125,11 +128,11 @@ this shape include:
 - **PydanticAI** — typed Python agents; the example below uses it.
 - **LangGraph** — graph-structured agent workflows.
 - **smolagents** — small code-first agents from Hugging Face.
-- **OpenAI Agents SDK** — OpenAI's own agent framework, pointed at the gateway.
+- **OpenAI Agents SDK** — OpenAI's own agent framework, pointed at the session URL.
 
 A runnable, self-contained example ships with the service at
-`$AISESSION_HOME/examples/agent_pydantic.py`. It reads the gateway base
-URL and session key from `AISESSION_BASE_URL` and `AISESSION_API_KEY`, wraps the
+`$AISESSION_HOME/examples/agent_pydantic.py`. It reads the session's base
+URL and key from `AISESSION_BASE_URL` and `AISESSION_API_KEY`, wraps the
 endpoint as a PydanticAI model, defines one trivial read-only tool
 (`count_words`) so tool calling is exercised end to end, and answers a single
 prompt. The example does not install anything: `pydantic-ai` is not present in
@@ -158,7 +161,8 @@ python "$AISESSION_HOME/examples/agent_pydantic.py"
 
 !!! warning "Default to qwen2.5_72B, not the coder model"
     The example defaults to `MODEL=qwen2.5_72B` on purpose. As above, native
-    tool calling fails silently on Qwen2.5-Coder-32B (vLLM #29192); a custom
+    tool calling fails silently on Qwen2.5-Coder-32B (upstream issue #29192,
+    described above); a custom
     agent pointed at the coder model will appear to run but never call your
     tools.
 

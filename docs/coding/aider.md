@@ -31,7 +31,7 @@ first if necessary.
 
 Run aider **on the login node** where you started the session, in a second
 terminal (leave the start terminal running). It can also run on your laptop
-through an SSH tunnel to the gateway port; the tunnel procedure is on
+through an SSH tunnel to the session's port; the tunnel procedure is on
 [Coding Sessions](overview.md).
 
 `ai-session code` prints the exact command; the same command in terms of the
@@ -52,17 +52,18 @@ aider \
 
 - The printed command uses aider's full install path; after
   `module load ai-session` the plain `aider` above resolves the same way.
-- `AISESSION_API_KEY` is the session access key, minted at start. The gateway
-  requires it; without it every request is refused with HTTP 401. See
+- `AISESSION_API_KEY` is the session access key, minted at start. Every request
+  must carry it; a request without it is refused with HTTP 401. See
   [Coding Sessions](overview.md#the-session-access-key) for sharing it with your lab.
 - Replace `/path/to/your/repo` with the git repository you want to edit.
 
 The two `OPENAI_API_*` variables are read by litellm, the client library aider uses
-to issue OpenAI-compatible requests. The API base must include the `/v1` suffix.
+to send requests in the standard OpenAI API format that most AI tools can talk to.
+The API base must include the `/v1` suffix.
 
 | Flag | Purpose |
 |---|---|
-| `--model openai/<key>` | Selects the served model. The `openai/` prefix selects the OpenAI-compatible protocol in litellm. |
+| `--model openai/<key>` | Selects the served model. The `openai/` prefix selects the standard format in litellm. |
 | `--weak-model openai/<key>` | Routes aider's auxiliary requests (commit messages, history summarization) to the same local model rather than to `api.openai.com`. |
 | `--model-metadata-file <path>` | Declares the model's context window (32768 tokens) and zero token cost to litellm. Without it, litellm cannot size prompts and prints `Unknown context window size`. |
 | `--edit-format diff` | Requests unified-diff edits instead of full-file rewrites. Pass `--edit-format whole` instead if diffs are rejected for a given file. |

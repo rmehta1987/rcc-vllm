@@ -8,6 +8,13 @@ specific client, the [Coding Sessions](coding/overview.md) pages and
 
 ## Access and cost
 
+### Who runs this, and how do I get help?
+
+The service is run by RCC staff. For access requests, problems the
+[Troubleshooting](troubleshooting.md) page does not solve, or requests that need an
+operator (a new model, a larger fine-tuned adapter, a longer time limit), open a
+ticket through the standard RCC support channel and mention `ai-session`.
+
 ### How do I get access?
 
 You need an RCC account with membership in the group the service runs under
@@ -62,6 +69,11 @@ or when you specifically want the largest general model, and Qwen3-4B for quick 
 low-cost tasks. Once they are staged, a reasoning model suits math and multi-step planning,
 and a vision model handles images.
 
+Whichever you end up on, start small and scale up: get your prompts or agent setup working
+against the small model first — it loads faster, spends less time waiting for free GPUs, and
+costs the least per hour — then switch to a larger model without changing any client
+configuration. If you need larger, ask; new models are staged on request.
+
 ## Coding agents, MCP, and building agents
 
 ### Which coding tool should I use?
@@ -73,7 +85,7 @@ VS Code or JetBrains.
 
 ### My agent said it made a change, but nothing happened. Why?
 
-The Qwen2.5-Coder-32B model does not emit the tool-call markers that vLLM's parser expects,
+The Qwen2.5-Coder-32B model does not emit the tool-call markers that the model server's parser expects,
 so tool calls can fail silently: the agent reports success but no file is edited. Use the
 `AGENTS.md` workaround documented on the [opencode](coding/opencode.md) page, or switch to
 the Qwen2.5-72B or Qwen3 model for agent work, which do not have this problem.
@@ -81,15 +93,17 @@ the Qwen2.5-72B or Qwen3 model for agent work, which do not have this problem.
 ### How do I add an MCP tool to my agent?
 
 Add an `mcp` block to a project-local `opencode.json` in your working directory, not to your
-personal configuration. Before you enable a server, read the agent-responsibility guidance:
+personal configuration; `ai-session mcp config` prints a ready-to-paste block for the two
+built-in tool servers (see [MCP Servers](coding/mcp.md)). Before you enable a server, read
+the agent-responsibility guidance:
 an MCP server runs with your full cluster permissions and can reach any file you can reach,
 including a labmate's files through shared project directories.
 
 ### Can I build my own agent on these models?
 
-Yes. Point any OpenAI-compatible agent framework — for example PydanticAI, LangGraph,
-smolagents, or the OpenAI Agents SDK — at the gateway URL, using your session key as the API
-key. For reliable tool-calling, use the Qwen2.5-72B or Qwen3 model rather than the Coder
+Yes. Point any agent framework that speaks the standard OpenAI API format — for example
+PydanticAI, LangGraph, smolagents, or the OpenAI Agents SDK — at the session URL, using
+your session key as the API key. For reliable tool-calling, use the Qwen2.5-72B or Qwen3 model rather than the Coder
 model.
 
 ## Common problems
@@ -102,10 +116,10 @@ again later.
 
 ### My connection worked and then stopped.
 
-If the login node was rebooted, or your SSH session dropped, the gateway process can stop
-while the GPU session keeps running. Check with `ai-session status`; if the gateway is
-gone but a server is still listed, run `ai-session stop` to release the GPUs and start
-again.
+If the login node was rebooted, or your SSH session dropped, the gateway — the connection
+point on the login node — can stop while the GPU session keeps running. Check with
+`ai-session status`; if the connection point is gone but a server is still listed, run
+`ai-session stop` to release the GPUs and start again.
 
 ### My home directory filled up.
 

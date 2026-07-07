@@ -19,7 +19,7 @@ and Purdue Anvil. SUs are fair-usage accounting, not dollars; no dollar figure i
 attached to them in Phase 1 (`dollar_per_su: null` in the policy file).
 
 !!! note "ai-session SUs are not RCC service units"
-    The RCC user guide states that beagle3 and other private partitions do not
+    The RCC user guide states that beagle3 and other dedicated systems do not
     consume RCC service units. The SUs on this page are the ai-session service's
     internal accounting, tracked by the service itself. They are separate from any
     RCC allocation balance and do not draw on it.
@@ -118,7 +118,7 @@ is `w_gpu * N`, the SU cost per hour of holding that configuration.
 | `qwen2.5_coder_32B` | a100     |        2 |         4772.81 |        1679.03 |          2.0 |
 | `qwen3_4b`          | a100     |        1 |        20063.28 |        4128.74 |          1.0 |
 
-Provenance: all five records were benchmarked with vLLM 0.10.2 at dtype bfloat16, at
+Provenance: all five records were benchmarked with the model server (vLLM 0.10.2) at dtype bfloat16, at
 concurrency 64 over three request profiles (prefill-heavy, decode-heavy, balanced),
 using the same serve flags production uses. Nodes and dates: the two a100 80 GB
 records on midway3-0377 (Qwen2.5-72B on 2026-06-02, Qwen2.5-Coder-32B on
@@ -161,7 +161,7 @@ for the token term to exceed the floor.
 | Case | Billed | Detail |
 |------|--------|--------|
 | Failed / 5xx request | No | The response carries no `usage` field and the engine's success counter is not incremented. |
-| Cancelled streaming request | Partially | `T_in` is billed in full (prefill happened) plus the output tokens actually produced. The gateway asks the engine for per-request counts on streaming requests; without them, billing falls back to the engine's own session-total counters. |
+| Cancelled streaming request | Partially | `T_in` is billed in full (prefill happened) plus the output tokens actually produced. The service asks the engine for per-request counts on streaming requests; without them, billing falls back to the engine's own session-total counters. |
 | Prefix caching | Yes, in full | Full `prompt_tokens` are billed with no cache discount in Phase 1 — the engine reports the full prompt regardless of cache hits, matching OpenAI's practice. Since the floor dominates interactive use, caching lets you do more per reservation rather than pay less. A discount is a possible Phase-2 knob. |
 | No rate record for the configuration | Floor only | The token term is reported UNRATED until the benchmark is run for that configuration; you are billed the reservation floor. |
 
@@ -186,7 +186,7 @@ directory. The summary contains:
 
 | Field | Meaning |
 |-------|---------|
-| `token_source` | Where the token counts came from: per-request usage recorded by the gateway for the session window, or the engine's own session-total counters as the fallback. |
+| `token_source` | Where the token counts came from: per-request usage recorded by the service for the session window, or the engine's own session-total counters as the fallback. |
 | `total_input_tokens`, `total_output_tokens` | The token counts billed. |
 | `token_su` | The token term of the formula. |
 | `floor_su` | The reservation floor. |

@@ -15,6 +15,49 @@ prompt to build the code-able items, a staff test plan, and a user-facing FAQ._
 - opencode proven against the service (Coder-32B tool-tag workaround); mkdocs user site;
   fractional-allocation billing correction.
 
+## Status update and next-stage tiers (2026-07-07)
+
+Everything in the zero-SU band is now shipped: backlog items 1–6, 9, 10, 11, 14 (built,
+not yet scheduled), 15, 16, 17, plus work the original ranking predates — the
+`module load ai-session` packaging with the `bin/ai-session` dispatcher, the
+jargon-free user docs on GitHub Pages, `module load opencode` (shared 1.14.41 install +
+modulefile), `ai-session mcp {config,run}` (path-free MCP access for agents), and the
+serving half of item 24: `--lora NAME=PATH` on every start verb (validated PEFT
+adapters, static registration, `LORA_TRAINING_DESIGN.md` covers the training half).
+
+What remains, tiered by what it costs and who must act:
+
+**Tier A — now (login-node work, or one approved smoke session)**
+
+- A1. GPU smoke of the new surface (~0.5 SU, needs user go-ahead): module-load →
+  `ai-session fast --time 00:30:00` → status/connect/env → stop; opencode-by-module
+  against it; `ai-session mcp` live inside an agent; a toy LoRA adapter on `qwen3_4b`
+  (stage a small public Qwen adapter from a login node first).
+- A2. Schedule the idle reaper (item 14 is built): a login-node cron entry per the
+  README; closes the forgotten-session billing hole.
+- A3. Tier-3 module install: ask RCC to symlink `ai-session` and `opencode` modulefiles
+  into `/software/modulefiles`, removing the `module use` step from every doc page.
+
+**Tier B — next build phase (small SU, no decisions)**
+
+- B1. Item 7, served embeddings endpoint — highest leverage; unblocks Continue
+  `@codebase`, document RAG (item 12/23).
+- B2. Item 13, FIM autocomplete model (Coder-1.5B/7B on an A40).
+- B3. Item 8, JSON/structured-output verification against a live session.
+- B4. LoRA training recipe (Option A of `LORA_TRAINING_DESIGN.md`): env + sbatch +
+  script + docs page; smoke on the 4B base.
+
+**Tier C — catalog growth (medium SU, demand-driven)**
+
+- C1. Item 18, reasoning model (DeepSeek-R1-Distill class) with rate-table benchmark.
+- C2. Item 19, vision model (Qwen2.5-VL class) with rate-table benchmark.
+
+**Tier D — decision-gated (named person must decide first)**
+
+- Items 20 (state-dir isolation), 21 (data-classification/AUP), 22 (server-side billing
+  enforcement), 23 (managed RAG), 25 (backfill scheduling), 26 (Phase-2 governance),
+  and Option B of the LoRA design (managed `ai-session tune`).
+
 ## Ranked backlog
 
 Effort key: **S** = hours, login-node only, no SU. **M** = days, or needs one short GPU

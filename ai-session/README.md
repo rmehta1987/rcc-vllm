@@ -103,6 +103,20 @@ commands.
   route (ready / loading / no_backend) rather than dumping squeue; the raw
   wrapper `status` verbs remain for operators.
 
+- `ai-session mcp run {jobs|usage}` execs the two read-only MCP servers
+  (`mcp/slurm_mcp.py`, `mcp/su_usage_mcp.py`) with the right interpreter and the
+  dispatcher's `AISESSION_STATE_DIR`, so agent configs contain no install paths
+  and no per-server environment block; `ai-session mcp config` prints the
+  opencode block to paste.
+
+- **opencode is packaged the same way**: source modulefile
+  `modulefiles/opencode/1.14.41` in this repo, deployed as a symlink under
+  `/project/rcc/mehta5/modulefiles/opencode/`, pointing PATH at the shared
+  single-file install `/project/rcc/mehta5/opencode/1.14.41/bin/opencode`.
+  1.14.41 is the version the AGENTS.md tool-tag workaround was verified
+  against; upgrade by installing a new version directory + modulefile side by
+  side and re-running the opencode live checks before retiring the old one.
+
 ## Prerequisites
 
 - Model weights under `/project/rcc/mehta5/vllm/models/`. Currently staged:
@@ -321,6 +335,37 @@ or a coding wrapper launched on top of a browser demo — would silently double 
 charge. End the running one first (`ai_session.py end`, or the wrapper `down`), or pass
 `--allow-multiple` to run more than one on purpose. This guard only ever inspects your
 own jobs, so it never sees another user's work.
+
+### LoRA adapters (user fine-tunes)
+
+The launcher can register PEFT-style LoRA adapters at serve time so users can run
+their own fine-tunes of a served base model. The user-facing path is
+`ai-session <preset> --lora NAME=/abs/path` (repeatable); the dispatcher validates
+each adapter (`adapter_config.json` present, absolute path, rank <= 256, base-model
+match warning) BEFORE anything is submitted, computes `MAX_LORA_RANK` (largest
+adapter `r`, rounded up to a vLLM-accepted size), and exports:
+
+```bash
+ENABLE_LORA=1
+LORA_MODULES="name1=/abs/path1 name2=/abs/path2"   # space-separated; no spaces in paths
+MAX_LORA_RANK=32
+```
+
+`launch_ai_session.sh` turns these into `--enable-lora --max-lora-rank N
+--lora-modules ...` on `vllm serve`. Registration is static: no runtime
+load/unload endpoint is exposed (`VLLM_ALLOW_RUNTIME_LORA_UPDATING` stays unset),
+so the adapter set is fixed for the session's life. Clients select an adapter by
+sending its NAME as the request `model`; the base model stays available under its
+own key. The gateway forwards and usage-logs adapter model names unchanged, and
+metering keys rates off the session's base `model_key`, so billing is unaffected.
+
+Rate-table stance: like `AGENT_FLAGS`, LoRA flags change the serve config away
+from the benchmarked one, so token rates do not strictly transfer; LoRA sessions
+are interactive and floor-billed in practice, which makes the token term moot.
+Do not benchmark-with-adapters into `rate_table.json`.
+
+Training is NOT offered by the service; the design for a supported training path
+is in [`LORA_TRAINING_DESIGN.md`](LORA_TRAINING_DESIGN.md).
 
 ## 4. Clients
 

@@ -11,6 +11,7 @@
 # All parameters have env defaults; flags override env. Required: MODEL_KEY + MODEL_PATH.
 #   MODEL_KEY MODEL_PATH TP CONSTRAINT GRES ACCOUNT PARTITION TIME_LIMIT
 #   CPUS MEM MAX_MODEL_LEN GPU_MEM_UTIL ENFORCE_EAGER PORT
+#   ENABLE_LORA LORA_MODULES MAX_LORA_RANK    (fine-tuned adapter serving)
 #
 # Standalone example:
 #   ./launch_ai_session.sh --model-key qwen2.5_72B \
@@ -29,7 +30,7 @@ MODEL_KEY=${MODEL_KEY:-}
 MODEL_PATH=${MODEL_PATH:-}
 TP=${TP:-4}
 CONSTRAINT=${CONSTRAINT:-A100}
-GRES=${GRES:-gpu:${TP}}
+GRES=${GRES:-}   # resolved after flag parsing so a --tp flag is honored
 ACCOUNT=${ACCOUNT:-rcc-staff}
 PARTITION=${PARTITION:-test}
 TIME_LIMIT=${TIME_LIMIT:-02:00:00}
@@ -39,6 +40,9 @@ MAX_MODEL_LEN=${MAX_MODEL_LEN:-8192}
 GPU_MEM_UTIL=${GPU_MEM_UTIL:-0.90}
 ENFORCE_EAGER=${ENFORCE_EAGER:-0}
 AGENT_CLIENT=${AGENT_CLIENT:-0}
+ENABLE_LORA=${ENABLE_LORA:-0}
+LORA_MODULES=${LORA_MODULES:-}      # space-separated name=/abs/path pairs (no spaces in paths)
+MAX_LORA_RANK=${MAX_LORA_RANK:-16}  # must be >= the largest adapter r; CLI computes this
 PORT=${PORT:-}
 
 # -- flag parsing (overrides env) ------------------------------------------- #
@@ -58,13 +62,18 @@ while [ $# -gt 0 ]; do
     --gpu-mem-util) GPU_MEM_UTIL="$2"; shift 2;;
     --enforce-eager) ENFORCE_EAGER=1; shift;;
     --agent-client) AGENT_CLIENT=1; shift;;
+    --enable-lora) ENABLE_LORA=1; shift;;
+    --lora-modules) LORA_MODULES="$2"; shift 2;;
+    --max-lora-rank) MAX_LORA_RANK="$2"; shift 2;;
     --port) PORT="$2"; shift 2;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
 done
 
-# GRES tracks TP unless explicitly set.
-if [ "${GRES}" = "gpu:" ]; then GRES="gpu:${TP}"; fi
+# GRES tracks the FINAL TP unless explicitly set (env or --gres). Resolving it
+# here, after flag parsing, means `--tp 2` alone requests 2 GPUs; previously the
+# default was computed from the pre-flag TP and `--tp 2` still reserved 4.
+if [ -z "${GRES}" ] || [ "${GRES}" = "gpu:" ]; then GRES="gpu:${TP}"; fi
 
 if [ -z "${MODEL_KEY}" ] || [ -z "${MODEL_PATH}" ]; then
   echo "ERROR: MODEL_KEY and MODEL_PATH are required" >&2
@@ -113,6 +122,23 @@ if [ "${AGENT_CLIENT}" = "1" ]; then
   # widen context for agent harnesses, unless the caller set a non-default value
   if [ "${MAX_MODEL_LEN}" = "8192" ]; then MAX_MODEL_LEN=32768; fi
   echo "[launch] agent-client mode: tool-parser=${TOOL_PARSER} max-model-len=${MAX_MODEL_LEN}" >&2
+fi
+
+# LoRA serving: register fine-tuned adapters at launch so clients can select one
+# by using its name as the request's model. Static registration only (adapters are
+# fixed for the life of the session); no runtime add/remove endpoint is exposed.
+# Adapter paths must be readable from the compute node (project storage, not $HOME
+# scratch) and must not contain spaces (LORA_MODULES is word-split below).
+# Like AGENT_FLAGS, this changes the serve config vs. the benchmarked one: rate
+# records don't strictly transfer, but LoRA sessions are interactive and floor-
+# billed in practice, so the token term is moot (same stance as agent mode).
+LORA_FLAGS=""
+if [ "${ENABLE_LORA}" = "1" ]; then
+  LORA_FLAGS="--enable-lora --max-lora-rank ${MAX_LORA_RANK}"
+  if [ -n "${LORA_MODULES}" ]; then
+    LORA_FLAGS="${LORA_FLAGS} --lora-modules ${LORA_MODULES}"
+  fi
+  echo "[launch] LoRA enabled: max-rank=${MAX_LORA_RANK} adapters='${LORA_MODULES:-none registered}'" >&2
 fi
 
 # Reasoning parser. The Qwen3 family ships with "thinking" ON by default: the model
@@ -184,6 +210,7 @@ vllm serve ${MODEL_PATH} \
   --max-model-len ${MAX_MODEL_LEN} \
   --gpu-memory-utilization ${GPU_MEM_UTIL} \
   ${AGENT_FLAGS} \
+  ${LORA_FLAGS} \
   ${REASONING_FLAG} \
   ${EAGER_FLAG}
 EOF

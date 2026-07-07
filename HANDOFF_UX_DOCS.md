@@ -1,5 +1,14 @@
 # Handoff — ai-session: UX polish, natural docs, pipeline continuation
 
+**STATUS 2026-07-07: LARGELY DONE — see `IMPLEMENTATION_ROADMAP.md` ("Status
+update and next-stage tiers") for the current plan.** Delivered since this was
+written: the `bin/ai-session` dispatcher + in-repo modulefile (2026-07-06), the
+jargon-free docs rewrite plus a second de-jargon pass (2026-07-07),
+`module load opencode`, `ai-session mcp {config,run}`, and LoRA adapter serving
+(`--lora`). Still open from this file: the Tier-3 central module install (RCC
+action), scheduling the idle reaper, and Goal-3 pipeline items (embeddings, FIM,
+JSON mode, LoRA training recipe).
+
 **Paste this whole file as your first message in the new session.**
 
 You are continuing work on the **ai-session** service under `/project/rcc/mehta5/vllm`

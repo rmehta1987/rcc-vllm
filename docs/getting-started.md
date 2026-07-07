@@ -3,8 +3,9 @@
 This page takes you from a login-node shell to chatting with an on-cluster model in
 your browser, and it is the complete guide to the browser (Open WebUI) client. Three
 pieces are involved: a **model server** (running on a GPU node inside the cluster,
-serving an OpenAI-compatible API), a **gateway** (a reverse proxy on the login node
-at a fixed per-user port, so the URL never changes between sessions and every
+speaking the standard OpenAI API format that most AI tools can talk to), a
+**gateway** (a small always-on relay the service runs on the login node
+at a fixed per-user port, so the session URL never changes between sessions and every
 request's token counts are recorded for billing), and **Open WebUI** (the chat
 interface, also on the login node). One command, `ai-session chat`, starts all
 three; `ai-session stop` stops them.
@@ -24,7 +25,7 @@ For coding tools (aider, Continue, opencode) against the same service, see
 | Step | Description | Command | Run on |
 |---|---|---|---|
 | [0](#step-0-load-the-module) | Put `ai-session` on your PATH | `module use /project/rcc/mehta5/modulefiles && module load ai-session` | Login node |
-| [1](#step-1-start-the-session) | Start the session, gateway, and UI | `ai-session chat` | Login node |
+| [1](#step-1-start-the-session) | Start the session and the chat UI | `ai-session chat` | Login node |
 | [2](#step-2-open-the-ssh-tunnel) | Forward the UI port to your machine | `ssh -N -L <UI_PORT>:localhost:<UI_PORT> -J <user>@midway3.rcc.uchicago.edu <user>@<login-node>` | Local machine |
 | [3](#step-3-chat-in-the-browser) | Chat | Browse `http://localhost:<UI_PORT>` | Local machine |
 | [4](#step-4-check-status) | Check what is running (no charge) | `ai-session status` | Login node |
@@ -36,7 +37,7 @@ For coding tools (aider, Continue, opencode) against the same service, see
   `/project/rcc/mehta5`. The shared environment, model weights, and commands are
   read-only to the group; there is nothing to install or copy.
 - Run the login-node commands inside `tmux` or `screen`, so that an SSH disconnect
-  does not kill the gateway and UI processes that the start command leaves running.
+  does not kill the relay and UI processes that the start command leaves running.
 
 Your writable state (chat history, session files, billing logs) is kept separate
 from the shared install, under a per-user directory. Ports are likewise derived
@@ -73,8 +74,8 @@ ai-session chat
 
 1. Starts the model server on cluster GPUs and blocks until the model actually
    answers. Loading takes a few minutes; the command prints its progress.
-2. Starts the gateway on `127.0.0.1:<GW_PORT>` and waits for its health endpoint
-   to return HTTP 200.
+2. Starts the gateway on `127.0.0.1:<GW_PORT>` and waits for its health check
+   address to return HTTP 200.
 3. Starts Open WebUI on `127.0.0.1:<UI_PORT>` (its Python imports are heavy;
    expect roughly 30 to 60 seconds).
 4. Prints the SSH tunnel command for the login node it ran on, the URL to browse,
@@ -86,6 +87,7 @@ Options and their defaults:
 |---|---|---|
 | `--time HH:MM:SS` | `02:00:00` | Session time limit. The session ends after this even if you forget `ai-session stop`, which caps the maximum floor charge. |
 | `--model KEY` | preset's model | Serve a different registered model; the right GPU configuration is chosen for you. |
+| `--lora NAME=PATH` | none | Also serve your own fine-tuned adapter; see [Your Own Fine-Tuned Model](lora.md). Repeatable. |
 
 The presets:
 
@@ -172,15 +174,15 @@ see [Coding Sessions](coding/overview.md)). Your chat history, uploads, and UI
 settings persist between sessions in a private per-user database under your home
 directory, at `$HOME/.ai-session/openwebui-data` (created mode 700, owner-only).
 Storing it in your home directory keeps it readable only by you; other cluster
-users cannot read your chats. Because the gateway URL is stable, the same history
+users cannot read your chats. Because the session URL is stable, the same history
 is there the next time you start a session.
 
 Verification: send a message and watch the reply stream in. Every request passes
-through the gateway, which records its token counts for the bill.
+through the relay, which records its token counts for the bill.
 
 ## The session access key
 
-Each session start mints a random access key and the gateway requires it on every
+Each session start mints a random access key, which is required on every
 request. The READY block prints the key and saves it, readable only by you, at
 `<state-dir>/logs/gateway/session_key` (mode 600). The Open WebUI that was started
 for you already carries the key, so your own browser tab works without any extra
@@ -191,7 +193,7 @@ may be on the same login node, the gateway binds to `127.0.0.1` and accepts only
 requests that carry the key, so no one else on the node can use your session by
 accident. To let a labmate use it, give them the key and have them:
 
-1. open their own SSH tunnel to your gateway port (`ssh -N -L
+1. open their own SSH tunnel to your session's port (`ssh -N -L
    <GW_PORT>:localhost:<GW_PORT> -J <them>@midway3.rcc.uchicago.edu
    <them>@<login-node>`), then
 2. set the key as the OpenAI API key in whatever client they use (in Open WebUI,
@@ -217,17 +219,17 @@ how long the running session has been up. While the model is loading, it says so
 and suggests re-checking; raw connection errors in your client during this window
 mean the same thing.
 
-To verify the gateway directly, poll its health endpoint **on the login node**:
+To verify the gateway directly, poll its health check address **on the login node**:
 
 ```bash
 curl -sf http://127.0.0.1:<GW_PORT>/__gateway/health
 ```
 
-Replace `<GW_PORT>` with your gateway port (`ai-session status` prints it when a
-gateway is running; `ai-session connect` always prints it). A healthy gateway
-returns HTTP 200 and a JSON body of the form
+Replace `<GW_PORT>` with your port (`ai-session status` prints it when one
+is running; `ai-session connect` always prints it). A healthy reply is
+HTTP 200 with a JSON body of the form
 `{"gateway": "ok", "backend_active": true}` (`false` when no session has published
-a backend). This endpoint is reachable without the access key, so it deliberately
+a backend). This address is reachable without the access key, so it deliberately
 reports only liveness — never the model server's internal address.
 
 ## Step 5: stop and read the charge
@@ -239,7 +241,7 @@ ai-session stop
 ```
 
 `ai-session stop` meters the session (collects the token counts and computes the
-SU charge), releases the GPUs and stops the clock, stops the gateway and Open
+SU charge), releases the GPUs and stops the clock, stops the relay and Open
 WebUI, and prints the SU receipt last, so it cannot scroll away:
 
 ```

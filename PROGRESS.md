@@ -1,6 +1,6 @@
 # vLLM Project — Progress Report
 
-_Last updated: 2026-07-02_
+_Last updated: 2026-07-07_
 
 ## What this project is
 
@@ -84,6 +84,25 @@ GPU types, plus the smaller models. The headline finding, in plain terms:
   dear per word, so we don't steer people to it.
 - **The 32B coding model is cheaper per word than the 72B model on every GPU**, and
   is now the default for coding.
+
+## Recent additions (July 2026)
+
+- **Everything is reached through modules now.** `module load ai-session` gives the
+  `ai-session` command (start, status, connect, stop, receipts); `module load
+  opencode` gives the opencode coding agent from a shared install. Nobody types a
+  project path. The modulefiles live in the repo and are symlinked into the
+  deployed location, so source and deployment cannot drift.
+- **Bring-your-own fine-tune.** `ai-session <preset> --lora NAME=PATH` serves a
+  user's LoRA adapter next to the base model; the adapter is validated before any
+  GPU is reserved. A design note (`ai-session/LORA_TRAINING_DESIGN.md`) proposes how
+  a supported training path should work; training itself is not offered yet.
+- **Agent tools without paths.** `ai-session mcp config` prints the block a coding
+  agent needs to use the two built-in read-only tool servers (job queue, usage);
+  `ai-session mcp run jobs|usage` starts them. Agent configurations no longer
+  contain any install path.
+- **A second de-jargoning pass over the user docs**, cutting the internal component
+  vocabulary ("gateway", the serving software's name, "OpenAI-compatible") in the
+  user-flow pages roughly in half and defining what remains in plain words.
 
 ## What's left to do
 

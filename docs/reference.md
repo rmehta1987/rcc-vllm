@@ -8,10 +8,11 @@ scripted access to the API. The everyday paths are covered end to end on
 list or want to script against the service.
 
 All commands on this page run **on the login node**. A session serves one model
-on cluster GPUs; the gateway is a reverse proxy on the login node at a fixed
-per-user port that forwards requests to wherever the current session is running.
-Charges are counted in Service Units (SU), where 1 SU = 1 A100-GPU-hour; the
-formula and rates are on [Billing and Service Units](billing.md).
+on cluster GPUs; the gateway — the small always-on relay the service runs on the
+login node at a fixed per-user port — forwards requests to wherever the current
+session is running, so clients keep one stable address. Charges are counted in
+Service Units (SU), where 1 SU = 1 A100-GPU-hour; the formula and rates are on
+[Billing and Service Units](billing.md).
 
 ## Setup
 
@@ -38,6 +39,8 @@ RCC installs the module centrally, plain `module load ai-session` will suffice.
 | Export `AISESSION_*` variables for clients | `eval "$(ai-session env)"` | free |
 | List the model presets | `ai-session models` | free |
 | Re-print the newest billing receipt | `ai-session receipt` | free |
+| Print the agent tool-server (MCP) config block | `ai-session mcp config` | free |
+| Run a built-in tool server (agents call this) | `ai-session mcp run jobs` / `ai-session mcp run usage` | free |
 | Stop the session, free the GPUs, print the charge | `ai-session stop` | free (ends the billing) |
 
 The start verbs accept:
@@ -47,6 +50,7 @@ The start verbs accept:
 | `--time HH:MM:SS` | `02:00:00` | Session time limit. The session ends when it expires even if you forget `stop`, capping the maximum floor charge. |
 | `--model KEY` | the preset's model | Serve a different registered model (table below); the GPU configuration is chosen for you. |
 | `--agent` | off | `code` only: enable native tool calling, required by [opencode and Cline](coding/opencode.md), not by aider or Continue. |
+| `--lora NAME=PATH` | none | Also serve your own fine-tuned adapter under the name `NAME`; repeatable. Validated before anything is reserved. See [Your Own Fine-Tuned Model](lora.md). |
 
 !!! warning "A running session consumes SU whether or not you send requests"
     Every start verb reserves GPUs billed at least the reservation floor until you
@@ -86,6 +90,11 @@ other people are set out on [Model licenses](licenses.md). Serving Llama 3.1
 additionally requires a one-time recorded acknowledgment, described there; ask
 the operators.
 
+To serve a model you fine-tuned yourself alongside its base model, add
+`--lora NAME=PATH` to the start verb; requests whose model is `NAME` are answered
+by your fine-tune. Requirements and examples are on
+[Your Own Fine-Tuned Model](lora.md).
+
 Qwen3 sessions serve with a reasoning parser, so the model's chain of thought is
 returned in a separate `reasoning_content` field and the answer stays in
 `content` — the raw `<think>…</think>` block is not mixed into the reply. Qwen2.5
@@ -103,18 +112,18 @@ session over their own tunnel — all of their usage bills to you, the starter.
 
 ## Scripted access with curl and Python
 
-Any OpenAI-compatible client works against the gateway. After
-`eval "$(ai-session env)"`, the base URL is `$AISESSION_BASE_URL`
-(`http://localhost:<GW_PORT>/v1`) on the login node running the gateway; from
-your laptop, tunnel the port first:
+Any client that speaks the standard OpenAI API format works against the session
+URL. After `eval "$(ai-session env)"`, the base URL is `$AISESSION_BASE_URL`
+(`http://localhost:<GW_PORT>/v1`) on the login node where you started the
+session; from your laptop, tunnel the port first:
 
 ```bash
 ssh -N -L <GW_PORT>:localhost:<GW_PORT> <cnetid>@<login-node>.rcc.uchicago.edu
 ```
 
-- Replace `<GW_PORT>` with your gateway port (`echo $((8400 + $(id -u) % 90))`).
+- Replace `<GW_PORT>` with your session port (`echo $((8400 + $(id -u) % 90))`).
 - Replace `<cnetid>` with your CNetID.
-- Replace `<login-node>` with the login node where the gateway is running (the
+- Replace `<login-node>` with the login node where you started the session (the
   start verbs print it; `hostname -s` on that node shows it).
 
 List the served model — run this **on the login node** (or on your laptop through

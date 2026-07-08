@@ -10,14 +10,17 @@ Tools:
   job_detail(job_id)      sacct -j <id>          -- accounting for a job you own
   partition_info(part?)   sinfo                  -- partition availability
 
+This uses the official MCP SDK (the ``mcp`` package, FastMCP) from the dedicated
+mcp-env; the protocol framing is the SDK's, only the tool bodies are ours.
+
 Security model (enforced here, not by convention):
   * Only four binaries may ever be spawned: squeue, sacct, sinfo, scontrol. The
     whitelist is checked on every call; anything else raises before exec.
   * Every command is built as an argv list and run with shell=False, so no
     argument is ever interpreted by a shell. There is no free-form command tool.
   * job_id is constrained to ^[0-9_]+$ (a bare id or an array task like 12345_6).
-    A value like "1; scancel 999" fails the regex and is rejected (JSON-RPC
-    -32602) before any process is spawned.
+    A value like "1; scancel 999" fails the regex and is refused before any
+    process is spawned.
   * partition/state filters are constrained to their own whitelists.
   * job_detail verifies you own the job (its sacct User == $USER) before
     returning any detail; a job you do not own returns "not found or not owned".
@@ -30,11 +33,11 @@ import pwd
 import re
 import shutil
 import subprocess
-import sys
+from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import mcp_common  # noqa: E402
-from mcp_common import InvalidParams, Tool, ToolError  # noqa: E402
+from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
+from pydantic import Field
 
 # Only these binaries may be spawned. scontrol is included for read-only
 # "scontrol show" queries; the wrappers below never pass an update subcommand.
@@ -48,6 +51,8 @@ PARTITION_RE = re.compile(r"\A[A-Za-z0-9_,.-]+\Z")
 STATES_RE = re.compile(r"\A[A-Za-z,]+\Z")
 
 _TIMEOUT = 25  # seconds; a hung scheduler must not wedge the agent
+
+mcp = FastMCP("slurm-mcp", log_level="WARNING")
 
 
 def _me():
@@ -81,23 +86,23 @@ def _run(argv):
     return proc.stdout
 
 
-def _require(args, key):
-    val = args.get(key)
-    if val is None or (isinstance(val, str) and val.strip() == ""):
-        raise InvalidParams("%s is required" % key)
-    return val
-
-
 # --------------------------------------------------------------------------- #
 # tools
 # --------------------------------------------------------------------------- #
-def my_jobs(args):
-    states = args.get("states")
+@mcp.tool(
+    description="List the invoking user's Slurm jobs (squeue --me). Optional "
+                "'states' filters by comma-separated Slurm states such as "
+                "RUNNING,PENDING. Read-only.")
+def my_jobs(
+    states: Annotated[str, Field(
+        description="Comma-separated Slurm states, e.g. 'RUNNING,PENDING'. "
+                    "Optional.")] = "",
+) -> str:
     argv = ["squeue", "--me",
             "-o", "%.18i %.24j %.9T %.10M %.11l %.5D %R"]
-    if states not in (None, ""):
-        if not isinstance(states, str) or not STATES_RE.match(states):
-            raise InvalidParams(
+    if states:
+        if not STATES_RE.match(states):
+            raise ToolError(
                 "states must match ^[A-Za-z,]+$ (e.g. RUNNING,PENDING)")
         argv += ["--states", states.upper()]
     out = _run(argv).rstrip("\n")
@@ -109,10 +114,16 @@ def my_jobs(args):
     return out
 
 
-def job_detail(args):
-    job_id = _require(args, "job_id")
-    if not isinstance(job_id, str) or not JOB_ID_RE.match(job_id):
-        raise InvalidParams(
+@mcp.tool(
+    description="Accounting summary (sacct) for one Slurm job the invoking user "
+                "owns. Ownership is verified before any detail is returned. "
+                "Read-only.")
+def job_detail(
+    job_id: Annotated[str, Field(
+        description="Slurm job id, e.g. '12345' or array task '12345_6'.")],
+) -> str:
+    if not JOB_ID_RE.match(job_id):
+        raise ToolError(
             "job_id must match ^[0-9_]+$ (a job id or array task, e.g. 12345 "
             "or 12345_6); got %r" % (job_id,))
     me = _me()
@@ -134,75 +145,22 @@ def job_detail(args):
     return detail.rstrip("\n")
 
 
-def partition_info(args):
-    part = args.get("partition")
+@mcp.tool(
+    description="Partition availability (sinfo). Optional 'partition' restricts "
+                "to one or a comma-separated list. Read-only.")
+def partition_info(
+    partition: Annotated[str, Field(
+        description="Partition name(s), e.g. 'gpu' or 'gpu,test'. "
+                    "Optional.")] = "",
+) -> str:
     argv = ["sinfo", "-o", "%.20P %.6a %.11l %.6D %.6t %N"]
-    if part not in (None, ""):
-        if not isinstance(part, str) or not PARTITION_RE.match(part):
-            raise InvalidParams(
-                "partition must match ^[A-Za-z0-9_,.-]+$; got %r" % (part,))
-        argv += ["-p", part]
+    if partition:
+        if not PARTITION_RE.match(partition):
+            raise ToolError(
+                "partition must match ^[A-Za-z0-9_,.-]+$; got %r" % (partition,))
+        argv += ["-p", partition]
     return _run(argv).rstrip("\n")
 
 
-TOOLS = [
-    Tool(
-        "my_jobs",
-        "List the invoking user's Slurm jobs (squeue --me). Optional 'states' "
-        "filters by comma-separated Slurm states such as RUNNING,PENDING. "
-        "Read-only.",
-        {
-            "type": "object",
-            "properties": {
-                "states": {
-                    "type": "string",
-                    "description": "Comma-separated Slurm states, e.g. "
-                                   "'RUNNING,PENDING'. Optional.",
-                },
-            },
-            "additionalProperties": False,
-        },
-        my_jobs,
-    ),
-    Tool(
-        "job_detail",
-        "Accounting summary (sacct) for one Slurm job the invoking user owns. "
-        "Ownership is verified before any detail is returned. Read-only.",
-        {
-            "type": "object",
-            "properties": {
-                "job_id": {
-                    "type": "string",
-                    "pattern": "^[0-9_]+$",
-                    "description": "Slurm job id, e.g. '12345' or array task "
-                                   "'12345_6'.",
-                },
-            },
-            "required": ["job_id"],
-            "additionalProperties": False,
-        },
-        job_detail,
-    ),
-    Tool(
-        "partition_info",
-        "Partition availability (sinfo). Optional 'partition' restricts to one "
-        "or a comma-separated list. Read-only.",
-        {
-            "type": "object",
-            "properties": {
-                "partition": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9_,.-]+$",
-                    "description": "Partition name(s), e.g. 'gpu' or "
-                                   "'gpu,test'. Optional.",
-                },
-            },
-            "additionalProperties": False,
-        },
-        partition_info,
-    ),
-]
-
-
 if __name__ == "__main__":
-    mcp_common.run_server("slurm-mcp", "1.0.0", TOOLS)
+    mcp.run()

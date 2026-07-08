@@ -23,10 +23,10 @@ that is its purpose, so the scheduler's read-only query commands appear by name 
 the tables below. You do not need to know or run those commands yourself; the
 agent does, through the server.
 
-Both servers are self-contained and already installed; `module load ai-session`
-is the only setup. `ai-session mcp run ...` starts them with the right
-interpreter and the right settings, so an agent's configuration never contains an
-install path.
+Both servers are built on the official MCP SDK and already installed;
+`module load ai-session` is the only setup. `ai-session mcp run ...` starts them
+with the right interpreter and the right settings, so an agent's configuration
+never contains an install path.
 
 ## What each server exposes
 
@@ -122,18 +122,23 @@ ai-session code --agent --model qwen2.5_72B
 ## Check a server by hand
 
 You can drive either server over stdio without an agent to confirm it responds.
-The following sends the initialize handshake and lists the usage tools:
+The following completes the initialize handshake and lists the usage tools. The
+trailing `sleep` keeps the input pipe open a moment so the server flushes its last
+reply before the pipe closes (a normal MCP client holds the connection open, so it
+never needs this):
 
 ```bash
-printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}' \
-  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+{ printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'; sleep 1; } \
   | ai-session mcp run usage
 ```
 
 Replace `usage` with `jobs` to check the job-queue server. Each line of output is
 one JSON-RPC response; the `tools/list` response enumerates the tools the agent
-will see.
+will see. (The `notifications/initialized` line is required: the server answers
+`tools/list` only after the initialize handshake is complete.)
 
 ## Responsibilities
 

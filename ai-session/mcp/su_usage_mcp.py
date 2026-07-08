@@ -11,6 +11,9 @@ Tools:
 
 Both accept an optional 'since' = YYYY-MM-DD lower bound (inclusive).
 
+This uses the official MCP SDK (the ``mcp`` package, FastMCP) from the dedicated
+mcp-env; the protocol framing is the SDK's, only the tool bodies are ours.
+
 Sources, in priority order (a session seen in more than one source is counted
 once, keyed by job id):
   1. Per-user receipts:  <state-dir>/logs/usage/<user>_<jobid>_<ts>_summary.json
@@ -34,11 +37,11 @@ import json
 import os
 import pwd
 import re
-import sys
+from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import mcp_common  # noqa: E402
-from mcp_common import InvalidParams, Tool  # noqa: E402
+from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
+from pydantic import Field
 
 SINCE_RE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z")
 
@@ -49,6 +52,8 @@ BILLING_DIR = os.environ.get("AISESSION_BILLING_DIR") \
 _REPO_USAGE = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)),
                  os.pardir, "logs", "usage"))
+
+mcp = FastMCP("su-usage-mcp", log_level="WARNING")
 
 
 def _me():
@@ -214,12 +219,11 @@ def _load_sessions(since):
     return records, notes
 
 
-def _check_since(args):
-    since = args.get("since")
+def _check_since(since):
     if since in (None, ""):
         return None
-    if not isinstance(since, str) or not SINCE_RE.match(since):
-        raise InvalidParams("since must be a date YYYY-MM-DD; got %r" % (since,))
+    if not SINCE_RE.match(since):
+        raise ToolError("since must be a date YYYY-MM-DD; got %r" % (since,))
     return since
 
 
@@ -231,11 +235,20 @@ def _su(rec):
         return 0.0
 
 
+_SINCE_FIELD = Annotated[str, Field(
+    description="Inclusive lower-bound date YYYY-MM-DD. Optional; omit for all "
+                "time.")]
+
+
 # --------------------------------------------------------------------------- #
 # tools
 # --------------------------------------------------------------------------- #
-def my_usage(args):
-    since = _check_since(args)
+@mcp.tool(
+    description="Total Service Units (SU) the invoking user has been billed, "
+                "with a breakdown by model and GPU tier. Reads local billing "
+                "receipts and, if readable, the central ledger. Read-only.")
+def my_usage(since: _SINCE_FIELD = "") -> str:
+    since = _check_since(since)
     records, notes = _load_sessions(since)
     me = _me()
     total = sum(_su(r) for r in records)
@@ -266,8 +279,12 @@ def my_usage(args):
     return "\n".join(lines)
 
 
-def my_sessions(args):
-    since = _check_since(args)
+@mcp.tool(
+    description="One row per billed session for the invoking user (job id, "
+                "model, GPU tier, reserved wall-hours, SU, basis, date). "
+                "Read-only.")
+def my_sessions(since: _SINCE_FIELD = "") -> str:
+    since = _check_since(since)
     records, notes = _load_sessions(since)
     me = _me()
     scope = " since %s" % since if since else " (all time)"
@@ -292,35 +309,5 @@ def my_sessions(args):
     return "\n".join(lines)
 
 
-_SINCE_PROP = {
-    "since": {
-        "type": "string",
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-        "description": "Inclusive lower-bound date YYYY-MM-DD. Optional; "
-                       "omit for all time.",
-    },
-}
-
-TOOLS = [
-    Tool(
-        "my_usage",
-        "Total Service Units (SU) the invoking user has been billed, with a "
-        "breakdown by model and GPU tier. Reads local billing receipts and, if "
-        "readable, the central ledger. Read-only.",
-        {"type": "object", "properties": _SINCE_PROP,
-         "additionalProperties": False},
-        my_usage,
-    ),
-    Tool(
-        "my_sessions",
-        "One row per billed session for the invoking user (job id, model, GPU "
-        "tier, reserved wall-hours, SU, basis, date). Read-only.",
-        {"type": "object", "properties": _SINCE_PROP,
-         "additionalProperties": False},
-        my_sessions,
-    ),
-]
-
-
 if __name__ == "__main__":
-    mcp_common.run_server("su-usage-mcp", "1.0.0", TOOLS)
+    mcp.run()

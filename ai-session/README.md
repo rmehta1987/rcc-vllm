@@ -107,7 +107,11 @@ commands.
   (`mcp/slurm_mcp.py`, `mcp/su_usage_mcp.py`) with the right interpreter and the
   dispatcher's `AISESSION_STATE_DIR`, so agent configs contain no install paths
   and no per-server environment block; `ai-session mcp config` prints the
-  opencode block to paste.
+  opencode block to paste. The servers are built on the official MCP SDK (the
+  `mcp` package, FastMCP), which lives in a dedicated venv — `MCP_PY`, default
+  `/project/rcc/mehta5/mcp-env/bin/python` — kept OUT of the vllm-probe serving
+  env so the SDK's dependency tree can never perturb vLLM. Only the tool bodies
+  (whitelisted read-only Slurm queries; per-user billing-receipt reads) are ours.
 
 - **opencode is packaged the same way**: source modulefile
   `modulefiles/opencode/1.14.41` in this repo, deployed as a symlink under

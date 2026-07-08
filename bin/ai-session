@@ -315,18 +315,27 @@ do_status() {
 }
 
 # --- mcp: the built-in agent tool servers ---------------------------------------
-# `mcp run` execs a stdio JSON-RPC server, so stdout must stay protocol-clean:
-# print nothing before exec on that path. Running through this verb (instead of
-# the script paths directly) pins the right interpreter AND inherits the
+# The tool servers use the official MCP SDK (the `mcp` package), which lives in a
+# dedicated venv kept OUT of the vllm-probe serving env so it can never perturb
+# vLLM's dependency set. MCP_PY points at that venv; override it if the env moves.
+# `mcp run` execs a stdio server, so stdout must stay protocol-clean: print
+# nothing before exec on that path. Running through this verb (instead of the
+# script paths directly) pins the right interpreter AND inherits the
 # AISESSION_STATE_DIR exported above, so the usage server finds the receipts
 # without any per-client environment block.
+MCP_PY=${MCP_PY:-/project/rcc/mehta5/mcp-env/bin/python}
 do_mcp() {
   local sub=${1:-config}; shift || true
   case "$sub" in
     run)
+      if [ ! -x "$MCP_PY" ]; then
+        echo "ERROR: MCP interpreter not found at $MCP_PY (the mcp-env venv with" >&2
+        echo "       the 'mcp' package). Set MCP_PY to its python." >&2
+        exit 2
+      fi
       case "${1:-}" in
-        jobs)  exec "$PY" "$AS/mcp/slurm_mcp.py" ;;
-        usage) exec "$PY" "$AS/mcp/su_usage_mcp.py" ;;
+        jobs)  exec "$MCP_PY" "$AS/mcp/slurm_mcp.py" ;;
+        usage) exec "$MCP_PY" "$AS/mcp/su_usage_mcp.py" ;;
         *) echo "usage: ai-session mcp run {jobs|usage}" >&2; exit 2 ;;
       esac ;;
     config)

@@ -1,0 +1,10 @@
+# Dependencies for the ai-session MCP tool servers (slurm_mcp.py, su_usage_mcp.py).
+# These run under a DEDICATED venv (MCP_PY, default /project/rcc/mehta5/mcp-env),
+# deliberately separate from the vllm-probe serving env so this dependency tree
+# can never perturb vLLM. Recreate the env on a login node (has internet):
+#
+#   /software/python-3.11.9-el8-x86_64/bin/python3.11 -m venv /project/rcc/mehta5/mcp-env
+#   /project/rcc/mehta5/mcp-env/bin/python -m pip install -r ai-session/mcp/requirements.txt
+#
+# The servers import only mcp.server.fastmcp and pydantic (a transitive mcp dep).
+mcp==1.28.1

@@ -31,3 +31,7 @@ benchmark/logs/
 # --- OS cruft ---
 .DS_Store
 public/
+
+# --- local opencode dev files (this repo used as an opencode workspace) ---
+/opencode.json
+/AGENTS.md

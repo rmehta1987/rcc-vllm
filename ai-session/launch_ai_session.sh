@@ -31,8 +31,8 @@ MODEL_PATH=${MODEL_PATH:-}
 TP=${TP:-4}
 CONSTRAINT=${CONSTRAINT:-A100}
 GRES=${GRES:-}   # resolved after flag parsing so a --tp flag is honored
-ACCOUNT=${ACCOUNT:-rcc-staff}
-PARTITION=${PARTITION:-test}
+ACCOUNT=${ACCOUNT:-}       # no default: unique per user/PI, must be supplied
+PARTITION=${PARTITION:-}   # no default: unique per user, must be supplied
 TIME_LIMIT=${TIME_LIMIT:-02:00:00}
 CPUS=${CPUS:-16}
 MEM=${MEM:-128G}
@@ -77,6 +77,12 @@ if [ -z "${GRES}" ] || [ "${GRES}" = "gpu:" ]; then GRES="gpu:${TP}"; fi
 
 if [ -z "${MODEL_KEY}" ] || [ -z "${MODEL_PATH}" ]; then
   echo "ERROR: MODEL_KEY and MODEL_PATH are required" >&2
+  exit 2
+fi
+
+if [ -z "${ACCOUNT}" ] || [ -z "${PARTITION}" ]; then
+  echo "ERROR: ACCOUNT and PARTITION are required (no default -- they are unique" >&2
+  echo "       per user/PI). Pass --account/--partition or set the env vars." >&2
   exit 2
 fi
 

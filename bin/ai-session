@@ -47,7 +47,11 @@ Start a session (holds GPUs; billing runs until you stop it):
   chat            general chat in your browser        (Qwen2.5 72B)
   code            coding session for aider/opencode   (Qwen2.5 Coder 32B)
   fast            small, cheap chat session           (Qwen3 4B)
-    options:  --time HH:MM:SS   session time limit (default 02:00:00)
+    options:  --account NAME    your Slurm account (required the first time;
+                                then remembered in ~/.ai-session/config)
+              --partition NAME  the GPU partition to run in (required the first
+                                time; then remembered)
+              --time HH:MM:SS   session time limit (default 02:00:00)
               --model KEY       serve a specific model instead of the preset
               --agent           (code) enable native tool-calling for agent
                                 clients such as opencode
@@ -115,17 +119,61 @@ print_env() {
 }
 
 # --- start verbs ----------------------------------------------------------------
-parse_start_opts() {   # sets OPT_TIME OPT_MODEL OPT_AGENT OPT_LORA from "$@"
-  OPT_TIME="" OPT_MODEL="" OPT_AGENT=0 OPT_LORA=""
+parse_start_opts() {   # sets OPT_TIME OPT_MODEL OPT_AGENT OPT_LORA OPT_ACCOUNT OPT_PARTITION
+  OPT_TIME="" OPT_MODEL="" OPT_AGENT=0 OPT_LORA="" OPT_ACCOUNT="" OPT_PARTITION=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --time)  OPT_TIME=$2; shift 2 ;;
-      --model) OPT_MODEL=$2; shift 2 ;;
-      --agent) OPT_AGENT=1; shift ;;
-      --lora)  OPT_LORA="${OPT_LORA:+$OPT_LORA }$2"; shift 2 ;;
+      --time)      OPT_TIME=$2; shift 2 ;;
+      --model)     OPT_MODEL=$2; shift 2 ;;
+      --agent)     OPT_AGENT=1; shift ;;
+      --lora)      OPT_LORA="${OPT_LORA:+$OPT_LORA }$2"; shift 2 ;;
+      --account)   OPT_ACCOUNT=$2; shift 2 ;;
+      --partition) OPT_PARTITION=$2; shift 2 ;;
       *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
   done
+}
+
+# Slurm account + GPU partition are unique to each user/PI, so there is no safe
+# default -- a wrong account bills the wrong group. Resolve them, in precedence
+# order, from the --account/--partition flags, then the ACCOUNT/PARTITION env,
+# then the remembered per-user config, and error if none supplies them. When the
+# flags are given, remember them so later runs need no flags. Exports
+# ACCOUNT/PARTITION for the wrapper -> ai_session.py -> launcher chain.
+CONFIG_FILE="$HOME/.ai-session/config"
+
+config_get() {  # config_get KEY -> value from CONFIG_FILE (last wins), or empty
+  [ -f "$CONFIG_FILE" ] || return 0
+  sed -n "s/^$1=//p" "$CONFIG_FILE" | tail -1
+}
+
+resolve_account_partition() {
+  local acct part cfg_a cfg_p
+  cfg_a=$(config_get ACCOUNT); cfg_p=$(config_get PARTITION)
+  acct=${OPT_ACCOUNT:-${ACCOUNT:-$cfg_a}}
+  part=${OPT_PARTITION:-${PARTITION:-$cfg_p}}
+  if [ -z "$acct" ] || [ -z "$part" ]; then
+    cat >&2 <<EOF
+ERROR: this service needs YOUR Slurm account and GPU partition. They are unique
+to you and your PI, so there is no default. Set them once (they are remembered
+in $CONFIG_FILE for next time):
+
+  ai-session ${VERB:-chat} --account <your-account> --partition <your-partition>
+
+To find them, ask your PI or RCC which account and GPU partition to use, or list
+the accounts you belong to:
+
+  sacctmgr -nP show assoc user=$U format=account
+EOF
+    exit 2
+  fi
+  export ACCOUNT="$acct" PARTITION="$part"
+  # Remember values supplied explicitly on the command line.
+  if [ -n "$OPT_ACCOUNT" ] || [ -n "$OPT_PARTITION" ]; then
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    ( umask 077; printf 'ACCOUNT=%s\nPARTITION=%s\n' "$acct" "$part" > "$CONFIG_FILE" )
+    echo "==> remembered account=$acct partition=$part in $CONFIG_FILE"
+  fi
 }
 
 apply_model_opt() {    # export MODEL/TP when --model was given
@@ -186,7 +234,8 @@ PYEOF
 }
 
 do_chat() {
-  parse_start_opts "$@"
+  VERB=chat; parse_start_opts "$@"
+  resolve_account_partition
   export MODEL=${MODEL:-qwen2.5_72B} TP=${TP:-4} CONSTRAINT=${CONSTRAINT:-A100}
   apply_model_opt
   apply_lora_opt
@@ -196,7 +245,8 @@ do_chat() {
 }
 
 do_fast() {
-  parse_start_opts "$@"
+  VERB=fast; parse_start_opts "$@"
+  resolve_account_partition
   export MODEL=${MODEL:-qwen3_4b} TP=${TP:-1} CONSTRAINT=${CONSTRAINT:-A100}
   apply_model_opt
   apply_lora_opt
@@ -206,7 +256,8 @@ do_fast() {
 }
 
 do_code() {
-  parse_start_opts "$@"
+  VERB=code; parse_start_opts "$@"
+  resolve_account_partition
   [ "$OPT_AGENT" = "1" ] && export AGENT_CLIENT=1
   # mirror run_coding_agent.sh's defaults so the LoRA base-model check sees them
   export MODEL=${MODEL:-qwen2.5_coder_32B} TP=${TP:-2} CONSTRAINT=${CONSTRAINT:-A100}

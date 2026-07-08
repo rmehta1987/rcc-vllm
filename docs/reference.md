@@ -47,6 +47,8 @@ The start verbs accept:
 
 | Option | Default | Purpose |
 |---|---|---|
+| `--account NAME` | none — required once | Your Slurm account. Required on the first session, then remembered in `~/.ai-session/config`; there is no default because the account is unique per user/PI. |
+| `--partition NAME` | none — required once | The GPU partition to run in. Required on the first session, then remembered. |
 | `--time HH:MM:SS` | `02:00:00` | Session time limit. The session ends when it expires even if you forget `stop`, capping the maximum floor charge. |
 | `--model KEY` | the preset's model | Serve a different registered model (table below); the GPU configuration is chosen for you. |
 | `--agent` | off | `code` only: enable native tool calling, required by [opencode and Cline](coding/opencode.md), not by aider or Continue. |
@@ -81,7 +83,7 @@ directory.
 |---|---|---|---|
 | `qwen2.5_72B` | Qwen2.5-72B-Instruct | Yes (`chat` preset) | Qwen (Tongyi) community license |
 | `qwen2.5_coder_32B` | Qwen2.5-Coder-32B-Instruct | Yes (`code` preset) | Apache-2.0 |
-| `qwen3_4b` | Qwen3-4B | Yes (`fast` preset) | Apache-2.0 |
+| `qwen3_4b` | Qwen3-4B | Yes (`fast` preset; also `code --model qwen3_4b` for cheap coding) | Apache-2.0 |
 | `llama3.1_70B` | Meta-Llama-3.1-70B-Instruct | Operators only | Llama 3.1 Community License + Acceptable Use Policy |
 | `qwen2.5_0.5B` | Qwen2.5-0.5B-Instruct | Operators only (smoke tests) | Apache-2.0 |
 

@@ -12,7 +12,8 @@ session file, and prints the endpoint URL once RUNNING. `end` does a final
 /metrics scrape, computes the SU charge (token term + exclusive-node floor),
 writes a usage log, and scancels the job.
 
-Phase-1 runtime target: --partition=test --account=rcc-staff (parameterized).
+--account and --partition are required (no default); they are unique per
+user/PI and come from the flag or the ACCOUNT/PARTITION environment variables.
 """
 
 from __future__ import annotations
@@ -233,6 +234,14 @@ def cmd_start(args) -> int:
                 "  --allow-multiple to intentionally run more than one at once."
             )
     model_path = server.model_path(args.model)
+
+    if not args.account or not args.partition:
+        raise SystemExit(
+            "ai_session start: --account and --partition are required (they are\n"
+            "  unique to you and your PI; there is no default). Pass them, or set\n"
+            "  ACCOUNT and PARTITION in the environment. The `ai-session` command\n"
+            "  does this for you and remembers them after the first run."
+        )
 
     env = dict(os.environ)
     env.update({
@@ -592,8 +601,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--tp", type=int, default=4)
     s.add_argument("--constraint", default="A100", help="GPU tier constraint (A100/H200/H100/L40S/A40)")
     s.add_argument("--gres", default=None, help="defaults to gpu:<tp>")
-    s.add_argument("--account", default="rcc-staff")
-    s.add_argument("--partition", default="test")
+    # No hard-coded defaults: account and partition are unique per user/PI and
+    # must be supplied (via flag or the ACCOUNT/PARTITION env vars the wrappers
+    # export). A silent default would bill the wrong Slurm account.
+    s.add_argument("--account", default=os.environ.get("ACCOUNT") or None)
+    s.add_argument("--partition", default=os.environ.get("PARTITION") or None)
     s.add_argument("--time", default="02:00:00")
     s.add_argument("--max-model-len", type=int, default=8192)
     s.add_argument("--gpu-mem-util", type=float, default=0.90)

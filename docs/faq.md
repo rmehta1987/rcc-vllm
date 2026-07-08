@@ -18,9 +18,11 @@ ticket through the standard RCC support channel and mention `ai-session`.
 ### How do I get access?
 
 You need an RCC account with membership in the group the service runs under
-(`rcc-staff` in the current phase). Once you have that, you load the module and start
-a session as described in [Getting Started](getting-started.md). There is no separate
-signup step.
+(`rcc-staff` in the current phase) and a Slurm account and GPU partition to run the
+GPU job under — the latter are unique to you and your PI, so you supply them the
+first time you start a session (`--account` and `--partition`, then remembered).
+Once you have those, you load the module and start a session as described in
+[Getting Started](getting-started.md). There is no separate signup step.
 
 ### What will a session cost?
 

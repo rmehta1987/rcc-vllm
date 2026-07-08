@@ -27,7 +27,7 @@ counts for billing), and your client.
 | Step | Description | Command | Run on |
 |---|---|---|---|
 | 0 | Put `ai-session` on your PATH (once per shell) | `module use /project/rcc/mehta5/modulefiles && module load ai-session` | Login node |
-| 1 | Start the session; wait for the READY block and the printed client command | `ai-session code` | Login node |
+| 1 | Start the session; wait for the READY block and the printed client command | `ai-session code` (first run: add `--account <acct> --partition <part>`) | Login node |
 | 2 | Run the printed client command inside the git repository you want to edit | printed by `ai-session code` (aider by default) | Login node or Local machine |
 | 3 | Check what is running at any time; costs nothing | `ai-session status` | Login node |
 | 4 | Stop the session, free the GPUs, print the SU charge | `ai-session stop` | Login node |
@@ -46,11 +46,14 @@ loaded (typically several minutes for the default 32B model), starts the gateway
 and prints a block containing the session's port, the exact aider command, and the
 SSH tunnel command for laptop access. Leave this terminal running.
 
-Options: `--time HH:MM:SS` sets the session time limit (default `02:00:00`; the
-session ends after this even if you forget to stop it, which caps the maximum
-charge); `--model KEY` serves a different registered model; `--agent` enables
-native tool calling, required by [opencode and Cline](opencode.md) but not by
-aider or Continue.
+Options: `--account NAME` and `--partition NAME` name the Slurm account and GPU
+partition to run under — required on your first session and then remembered in
+`~/.ai-session/config` (see [Getting Started](../getting-started.md#step-1-start-the-session));
+`--time HH:MM:SS` sets the session time limit (default `02:00:00`; the session
+ends after this even if you forget to stop it, which caps the maximum charge);
+`--model KEY` serves a different registered model; `--agent` enables native tool
+calling, required by [opencode and Cline](opencode.md) but not by aider or
+Continue.
 
 !!! warning "A running session consumes SU whether or not you send requests"
     `ai-session code` starts a billed GPU reservation. Stop it as soon as you
@@ -183,10 +186,16 @@ same `localhost` URL directly. For what an SSH tunnel is and how to debug one, s
 
 The default is `qwen2.5_coder_32B` (Qwen2.5-Coder-32B-Instruct). To serve the
 general 72B model instead, run `ai-session code --model qwen2.5_72B`; the right
-GPU configuration is chosen for you.
+GPU configuration is chosen for you. For light work — debugging, quick questions,
+or simple edits where you want the cheapest session — serve the small `qwen3_4b`
+on a single GPU with `ai-session code --model qwen3_4b`; it holds one GPU at the
+1.0 SU/h floor and, unlike the coder model, emits native tool calls reliably, so
+it is also the small option for `--agent` clients and MCP tools (see
+[opencode and Cline](opencode.md) and [Agent responsibilities](agents.md)).
 
 | Model key | Parameters | GPUs it runs on | Prefill (tok/s) | Decode (tok/s) | Reservation floor |
 |---|---|---|---:|---:|---:|
+| `qwen3_4b` (cheapest; debugging, simple edits, tool calling) | 4B | 1 x A100-80GB | — | — | 1.0 SU/h |
 | `qwen2.5_coder_32B` (default) | 32B | 2 x A100-80GB | 4773 | 1679 | 2.0 SU/h |
 | `qwen2.5_72B` | 72B | 4 x A100-80GB | 2901 | 1123 | 4.0 SU/h |
 | `qwen2.5_72B` (H200 option) | 72B | 2 x H200 | 7594 | 2329 | 6.0 SU/h |

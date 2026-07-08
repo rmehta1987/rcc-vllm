@@ -25,7 +25,7 @@ For coding tools (aider, Continue, opencode) against the same service, see
 | Step | Description | Command | Run on |
 |---|---|---|---|
 | [0](#step-0-load-the-module) | Put `ai-session` on your PATH | `module use /project/rcc/mehta5/modulefiles && module load ai-session` | Login node |
-| [1](#step-1-start-the-session) | Start the session and the chat UI | `ai-session chat` | Login node |
+| [1](#step-1-start-the-session) | Start the session and the chat UI (first run: add `--account <acct> --partition <part>`) | `ai-session chat` | Login node |
 | [2](#step-2-open-the-ssh-tunnel) | Forward the UI port to your machine | `ssh -N -L <UI_PORT>:localhost:<UI_PORT> -J <user>@midway3.rcc.uchicago.edu <user>@<login-node>` | Local machine |
 | [3](#step-3-chat-in-the-browser) | Chat | Browse `http://localhost:<UI_PORT>` | Local machine |
 | [4](#step-4-check-status) | Check what is running (no charge) | `ai-session status` | Login node |
@@ -36,6 +36,13 @@ For coding tools (aider, Continue, opencode) against the same service, see
 - Membership in the `rcc-staff` group with read access to the project tree
   `/project/rcc/mehta5`. The shared environment, model weights, and commands are
   read-only to the group; there is nothing to install or copy.
+- A **Slurm account and GPU partition** to run the GPU job under. These are unique
+  to you and your PI, and the service has no default: the first time you start a
+  session you pass them with `--account` and `--partition`, and they are then
+  remembered (see [Step 1](#step-1-start-the-session)). If you do not know them,
+  ask your PI or RCC which account and GPU partition to use, or run
+  `sacctmgr -nP show assoc user=$USER format=account` to list the accounts you
+  belong to.
 - Run the login-node commands inside `tmux` or `screen`, so that an SSH disconnect
   does not kill the relay and UI processes that the start command leaves running.
 
@@ -58,11 +65,18 @@ during the current testing phase; once RCC installs the module centrally, plain
 
 ## Step 1: start the session
 
-Run this **on the login node**, inside `tmux` or `screen`:
+The first time you start any session, name your Slurm account and GPU partition
+**on the login node**, inside `tmux` or `screen`:
 
 ```bash
-ai-session chat
+ai-session chat --account <your-account> --partition <your-partition>
 ```
+
+The two values are saved to `~/.ai-session/config`, so from then on
+`ai-session chat` (or `code`, or `fast`) needs no flags; pass `--account` or
+`--partition` again only to change them. Without a saved account and partition,
+the command stops before reserving any GPU and tells you what to set — nothing is
+billed.
 
 !!! warning "A running session consumes SU whether or not you send requests"
     From the moment the session is up, it accrues at least the reservation floor —
@@ -85,6 +99,8 @@ Options and their defaults:
 
 | Option | Default | Meaning |
 |---|---|---|
+| `--account NAME` | none — required once | Your Slurm account. Required on the first run, then remembered in `~/.ai-session/config`. |
+| `--partition NAME` | none — required once | The GPU partition to run in. Required on the first run, then remembered. |
 | `--time HH:MM:SS` | `02:00:00` | Session time limit. The session ends after this even if you forget `ai-session stop`, which caps the maximum floor charge. |
 | `--model KEY` | preset's model | Serve a different registered model; the right GPU configuration is chosen for you. |
 | `--lora NAME=PATH` | none | Also serve your own fine-tuned adapter; see [Your Own Fine-Tuned Model](lora.md). Repeatable. |

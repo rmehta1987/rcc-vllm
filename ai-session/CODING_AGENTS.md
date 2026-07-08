@@ -387,7 +387,7 @@ The example is the exact file used in the verification:
   "autoupdate": false,
   "enabled_providers": ["rcc"],
   "mcp": {
-    "flytetest": {
+    "my-personal-server": {
       "type": "local",
       "enabled": false,
       "command": ["true"]
@@ -417,7 +417,7 @@ The example is the exact file used in the verification:
 
 The `{env:...}` references resolve to the `AISESSION_BASE_URL` / `AISESSION_API_KEY`
 variables set by `eval "$(ai-session env)"` in Step 2, so the endpoint and key need
-no editing. Adapt one thing: replace `flytetest` with the name of each MCP server in
+no editing. Adapt one thing: replace `my-personal-server` with the name of each MCP server in
 your personal `~/.config/opencode/opencode.json` (add one disabled entry per server;
 delete the `mcp` block if you have none). A project-local `opencode.json` is merged over your
 personal configuration, so nothing personal is modified. `small_model` must point

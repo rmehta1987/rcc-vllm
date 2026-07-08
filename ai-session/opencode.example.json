@@ -6,7 +6,7 @@
   "autoupdate": false,
   "enabled_providers": ["rcc"],
   "mcp": {
-    "flytetest": {
+    "my-personal-server": {
       "type": "local",
       "enabled": false,
       "command": ["true"]

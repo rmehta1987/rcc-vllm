@@ -114,7 +114,7 @@ root with exactly the following content, which reproduces the example file:
   "autoupdate": false,
   "enabled_providers": ["rcc"],
   "mcp": {
-    "flytetest": {
+    "my-personal-server": {
       "type": "local",
       "enabled": false,
       "command": ["true"]
@@ -149,9 +149,12 @@ root with exactly the following content, which reproduces the example file:
   `export AISESSION_BASE_URL=... AISESSION_API_KEY=...`. The key is required;
   a request without it is refused with HTTP 401. See
   [Coding Sessions](overview.md#the-session-access-key) for sharing it with your lab.
-- Replace `flytetest` with the name of each MCP server in your personal
+- The `mcp` block is the only part of the file a user ever edits. Replace
+  `my-personal-server` with the name of each MCP server in your personal
   `~/.config/opencode/opencode.json`, one disabled entry per server; delete the
-  `mcp` block if you have none.
+  `mcp` block if you have none. The connection is never configured by editing
+  the file: the URL and key always arrive through the two environment
+  variables, so the same file works unchanged for every session, port, and key.
 
 What the entries do: the `rcc` provider block routes requests through the generic
 OpenAI-compatible adapter (`@ai-sdk/openai-compatible`) to the session URL with the

@@ -77,7 +77,7 @@ These servers are deliberately narrow:
 `ai-session mcp config` prints the block below at any time. Add it to your
 project-local `opencode.json` — the same file described on
 [opencode and Cline](opencode.md); the entries replace the placeholder
-`flytetest` entry shown there.
+`my-personal-server` entry shown there.
 
 ```json title="opencode.json (mcp block)"
 {

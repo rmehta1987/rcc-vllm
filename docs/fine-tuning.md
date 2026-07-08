@@ -1,10 +1,10 @@
 # Fine-Tuning a Model on Your Own Data
 
 This page shows how to produce a LoRA adapter — a small set of extra weights that
-adjust one of the served models toward your own code, data, or writing style — and
-then serve it. Once you have an adapter, [Using Your Own Fine-Tuned
-Model](lora.md) covers loading it into a session; this page is the step before
-that, where the adapter is made.
+adjust one of the served text models toward a task or style of your own — and then
+serve it. Once you have an adapter, [Using Your Own Fine-Tuned Model](lora.md)
+covers loading it into a session; this page is the step before that, where the
+adapter is made.
 
 !!! note "What the service provides, and what you run yourself"
     The **serving** side is built and verified: `ai-session <preset> --lora
@@ -16,44 +16,53 @@ that, where the adapter is made.
     adapt, not a tested black box. The two settings it exists to get right — the
     base checkpoint and the chat template — are called out below.
 
-## First decide whether you need to fine-tune at all
+## Is a LoRA adapter the right tool?
 
-Fine-tuning teaches a model *durable patterns* from many examples: a house
-coding style, a domain's conventions, an API it should reach for by default. It
-is the wrong tool for a **one-time task** you could do with the code already in
-front of you.
+The served models are **text** language models. A LoRA adapter on them is worth
+producing when a task is a **repeated pattern over many text inputs** — a fixed
+output format, a mapping from free text to a schema, a house writing or coding
+style — that you cannot get reliably from prompting alone. It is the wrong tool
+for several adjacent problems:
 
-A common example: "I have a statistical-genetics codebase that computes true
-effect sizes from noisy GWAS estimates, and I want to port it to PyTorch." That
-is a translation of one existing codebase, not a durable pattern. Fine-tuning
-would be slow and worse than the direct route, which is to open the repository in
-a coding tool and let it read your actual files:
+| Your goal | Better tool |
+|---|---|
+| A repeated text-to-text pattern over many inputs (this page) | LoRA adapter |
+| Answering from a body of facts or documents | Retrieval (embeddings), not training |
+| A single transformation with the material in hand | A coding session with the file in context |
+| Classifying images, or inference over a simulator (SBI) | A vision or density model — not a text model, so not this service |
 
-```bash
-cd /path/to/statgen-repo
-module use /project/rcc/mehta5/modulefiles
-module load ai-session
-ai-session code            # start a session; then, in the repo, run the printed aider command
-```
+The single-transformation case is the common trap. "I have a statistical-genetics
+codebase that computes true effect sizes from noisy GWAS estimates and I want to
+port it to PyTorch" is *one* translation with the code already in front of you,
+not a durable pattern; open the repository in a [coding session](coding/overview.md)
+and let the tool read your files. Fine-tune only when the pattern recurs across
+many inputs, as in the worked example below.
 
-Then ask in plain language, for example: *"Port `shrinkage.py` from NumPy to
-PyTorch. Keep the function signatures, make the estimators differentiable so
-`betahat` can carry gradients, and move the array math to torch ops."* The tool
-works from your exact code, which beats any fine-tune for a single conversion.
-See [Coding Sessions](coding/overview.md).
+## Worked example: extracting structured data from a document corpus
 
-Fine-tune instead when you will write **new** code of this kind repeatedly and
-want the model to default to your idioms — your naming (`betahat`, `se`,
-`tau2`), your convention that estimators stay differentiable and batched over
-SNPs — without being told each time. The rest of this page works that example
-through end to end.
+A common and broadly applicable case: you have thousands of unstructured
+documents — pathology or radiology reports, clinical notes, interview
+transcripts, curated literature — and you need each turned into the same set of
+structured fields for analysis. The mapping from varied free text to one fixed
+schema is a repeated pattern, which is what a LoRA learns well.
+
+This is also a task the on-cluster service is specifically suited to: when the
+text is protected (for example PHI under HIPAA) it cannot be sent to a hosted
+model, so an adapter that runs entirely inside the cluster is the enabling
+option, not merely a convenience. A base model with a good prompt may extract a
+few reports acceptably; a fine-tune earns its keep at volume, where per-call
+prompt length, throughput, and *consistency of the schema across every document*
+are what matter.
+
+The example below extracts a small pathology-report schema. The reports shown are
+synthetic, not real patient data.
 
 ## What you need
 
-1. **A dataset of examples** of the behavior you want, as a JSONL file with one
+1. **A dataset of examples** of the mapping you want, as a JSONL file with one
    chat conversation per line (`{"messages": [...]}`). Fifty to a few hundred
    hand-checked examples is a good range; quality matters far more than volume,
-   because every assistant turn is something the model will learn to imitate.
+   because every assistant turn is a target the model learns to reproduce.
 2. **Your own GPU allocation** (your PI's Slurm account and partition). Training
    does not run under the service; it runs as an ordinary batch job on your
    account.
@@ -63,28 +72,31 @@ through end to end.
 
 ## Step 1: Build the dataset
 
-Each line pairs a request with the code you would sign off on. For the
-statistical-genetics example, the examples teach the model your PyTorch idioms
-for shrinkage and empirical-Bayes estimators:
+Each line pairs an input document with the exact structured output you want back.
+Note how the assistant turns normalize varied source phrasing into one schema —
+"Nottingham grade 2", "moderately differentiated", and "poorly differentiated"
+all map to an integer grade, and centimetres are converted to millimetres. That
+normalization, applied consistently across a whole corpus, is the reason to train
+rather than prompt.
 
 ```json title="train.jsonl (one object per line; shown pretty-printed)"
 {"messages": [
-  {"role": "user", "content": "Port this James-Stein shrinkage estimator to PyTorch. Keep it differentiable and batched over SNPs.\n\ndef james_stein(betahat, se):\n    z = betahat / se\n    p = len(z)\n    shrink = max(1 - (p - 2) / np.sum(z**2), 0)\n    return shrink * betahat"},
-  {"role": "assistant", "content": "import torch\n\ndef james_stein(betahat, se):\n    # betahat, se: (n_snps,) tensors; returns shrunk effect sizes, differentiable in betahat\n    z = betahat / se\n    p = betahat.numel()\n    shrink = torch.clamp(1.0 - (p - 2) / (z**2).sum(), min=0.0)\n    return shrink * betahat"}
+  {"role": "user", "content": "Extract the fields from this pathology report as JSON: site, diagnosis, grade (1-3), tumor_size_mm, margins, nodes_positive, nodes_examined.\n\nSpecimen: left breast, lumpectomy. Invasive ductal carcinoma, Nottingham grade 2. Tumor size 1.8 cm. Margins negative, closest margin 3 mm. 2 of 3 sentinel lymph nodes positive."},
+  {"role": "assistant", "content": "{\"site\": \"left breast\", \"diagnosis\": \"invasive ductal carcinoma\", \"grade\": 2, \"tumor_size_mm\": 18, \"margins\": \"negative\", \"nodes_positive\": 2, \"nodes_examined\": 3}"}
 ]}
 {"messages": [
-  {"role": "user", "content": "Write the empirical-Bayes posterior mean for effect sizes under a N(0, tau2) prior, PyTorch, batched over SNPs."},
-  {"role": "assistant", "content": "import torch\n\ndef eb_posterior_mean(betahat, se, tau2):\n    # normal-means model: betahat ~ N(beta, se^2), beta ~ N(0, tau2)\n    # per-SNP shrinkage weight; tau2 can be a leaf tensor fit by marginal likelihood\n    w = tau2 / (tau2 + se**2)\n    return w * betahat"}
+  {"role": "user", "content": "Extract the fields from this pathology report as JSON: site, diagnosis, grade (1-3), tumor_size_mm, margins, nodes_positive, nodes_examined.\n\nSpecimen: sigmoid colon, segmental resection. Moderately differentiated adenocarcinoma invading through the muscularis propria into pericolic fat. Largest dimension 4.2 cm. Resection margins uninvolved. 0 of 14 lymph nodes involved."},
+  {"role": "assistant", "content": "{\"site\": \"sigmoid colon\", \"diagnosis\": \"adenocarcinoma\", \"grade\": 2, \"tumor_size_mm\": 42, \"margins\": \"negative\", \"nodes_positive\": 0, \"nodes_examined\": 14}"}
 ]}
 {"messages": [
-  {"role": "user", "content": "Give me the negative marginal log-likelihood of tau2 for the normal-means model so I can fit it with torch.optim."},
-  {"role": "assistant", "content": "import torch\n\ndef neg_marginal_loglik(tau2, betahat, se):\n    # marginal: betahat ~ N(0, tau2 + se^2); sum over SNPs, minimize w.r.t. tau2\n    var = tau2 + se**2\n    return 0.5 * (torch.log(2 * torch.pi * var) + betahat**2 / var).sum()"}
+  {"role": "user", "content": "Extract the fields from this pathology report as JSON: site, diagnosis, grade (1-3), tumor_size_mm, margins, nodes_positive, nodes_examined.\n\nSpecimen: stomach, distal gastrectomy. Poorly differentiated adenocarcinoma, greatest dimension 5.5 cm. Margins negative. 6 of 21 regional lymph nodes positive for metastatic carcinoma."},
+  {"role": "assistant", "content": "{\"site\": \"stomach\", \"diagnosis\": \"adenocarcinoma\", \"grade\": 3, \"tumor_size_mm\": 55, \"margins\": \"negative\", \"nodes_positive\": 6, \"nodes_examined\": 21}"}
 ]}
 ```
 
 The file itself has one JSON object per physical line (no pretty-printing); the
 blocks above are expanded only for reading. Put the file on project or scratch
-storage — for example `/project/<pi>/statgen/train.jsonl`.
+storage — for example `/project/<pi>/pathology/train.jsonl`.
 
 ## Step 2: Build the training environment
 
@@ -104,7 +116,9 @@ The two settings that must be exactly right are the **base checkpoint** — the
 same one the service serves, loaded from the shared model directory, not a fresh
 download that may be a different snapshot — and the **chat template**, applied
 with the base model's own tokenizer so the fine-tune sees the prompt framing
-inference will use. Save this as `train_lora.py`:
+inference will use. This example fine-tunes the small model (`Qwen3-4B`), which
+is cheap to train and enough for a well-defined extraction schema; scale to the
+72B for harder tasks by changing one path. Save this as `train_lora.py`:
 
 ```python title="train_lora.py"
 import torch
@@ -114,50 +128,49 @@ from trl import SFTTrainer, SFTConfig
 from datasets import load_dataset
 
 # 1. SAME checkpoint the service serves -- not a fresh Hugging Face download.
-BASE = "/project/rcc/mehta5/vllm/models/Qwen2.5-Coder-32B-Instruct"
+BASE = "/project/rcc/mehta5/vllm/models/Qwen3-4B"
 tok = AutoTokenizer.from_pretrained(BASE)
 model = AutoModelForCausalLM.from_pretrained(
     BASE, torch_dtype=torch.bfloat16, device_map="auto")
 
 # 2. Format each example with the base model's OWN chat template.
-ds = load_dataset("json", data_files="/project/<pi>/statgen/train.jsonl", split="train")
+ds = load_dataset("json", data_files="/project/<pi>/pathology/train.jsonl", split="train")
 ds = ds.map(lambda r: {"text": tok.apply_chat_template(r["messages"], tokenize=False)})
 
 lora = LoraConfig(
-    r=32, lora_alpha=64, lora_dropout=0.05, task_type="CAUSAL_LM",
+    r=16, lora_alpha=32, lora_dropout=0.05, task_type="CAUSAL_LM",
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
                     "gate_proj", "up_proj", "down_proj"])
 
 trainer = SFTTrainer(
     model=model, train_dataset=ds, peft_config=lora,
     args=SFTConfig(
-        output_dir="/project/<pi>/adapters/statgen-torch",
-        num_train_epochs=3, per_device_train_batch_size=1,
-        gradient_accumulation_steps=8, learning_rate=1e-4,
-        bf16=True, dataset_text_field="text", max_seq_length=4096))
+        output_dir="/project/<pi>/adapters/path-extract",
+        num_train_epochs=3, per_device_train_batch_size=4,
+        gradient_accumulation_steps=4, learning_rate=2e-4,
+        bf16=True, dataset_text_field="text", max_seq_length=2048))
 trainer.train()
 trainer.save_model()   # writes adapter_config.json + the adapter weights
 ```
 
-Rank 32 is well inside the serving cap of 256. To fine-tune the general model or
-the small model instead, point `BASE` at
-`/project/rcc/mehta5/vllm/models/Qwen2.5-72B-Instruct` or
-`/project/rcc/mehta5/vllm/models/Qwen3-4B`, and serve the matching preset later.
+Rank 16 is well inside the serving cap of 256. To fine-tune the general 72B model
+instead, point `BASE` at `/project/rcc/mehta5/vllm/models/Qwen2.5-72B-Instruct`
+(it needs more GPUs and a longer run) and serve the matching preset later.
 
 ## Step 4: Submit the training job
 
 Training runs on **your** allocation, so submit it with your own account and
-partition. A minimal `train_lora.sbatch`:
+partition. A minimal `train_lora.sbatch` for the 4B base:
 
 ```bash title="train_lora.sbatch"
 #!/bin/bash
-#SBATCH --job-name=lora-statgen
+#SBATCH --job-name=lora-path-extract
 #SBATCH --account=<your-account>
 #SBATCH --partition=<your-gpu-partition>
-#SBATCH --gres=gpu:2
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
-#SBATCH --time=04:00:00
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+#SBATCH --time=02:00:00
 
 source ~/lora-train-env/bin/activate
 python train_lora.py
@@ -167,28 +180,30 @@ python train_lora.py
 sbatch train_lora.sbatch
 ```
 
-A three-epoch, rank-32 run on a few hundred examples with the Coder-32B base
-takes low single-digit GPU-hours on one or two A100-80GB cards. Slurm bills your
-account for that time; the ai-session service and its Service Units are not
-involved in training at all.
+A three-epoch, rank-16 run on a few hundred examples with the 4B base takes
+well under an hour on one A100-80GB. Slurm bills your account for that time; the
+ai-session service and its Service Units are not involved in training at all.
 
-When the job finishes, `/project/<pi>/adapters/statgen-torch` contains
+When the job finishes, `/project/<pi>/adapters/path-extract` contains
 `adapter_config.json` and the adapter weights — exactly what the serving side
 validates.
 
 ## Step 5: Serve your adapter
 
 Start a session with the adapter loaded, giving it a short name you will type in
-your client:
+your client. The 4B adapter is served by the `fast` preset:
 
 ```bash
-ai-session code --lora statgen=/project/<pi>/adapters/statgen-torch
+ai-session fast --lora pathextract=/project/<pi>/adapters/path-extract
 ```
 
-Request `model=statgen` and the model writes in the style you taught; request the
-base model (`qwen2.5_coder_32B`) in the same session to compare against stock
-behavior at no extra cost. The full serving details — per-client usage, cost, and
-limits — are on [Using Your Own Fine-Tuned Model](lora.md).
+Send documents with `model=pathextract` and the model returns the schema you
+taught; request the base model (`qwen3_4b`) in the same session to compare
+against stock behavior at no extra cost. To guarantee the output parses as JSON
+rather than trusting the model to stay in format, validate each response and
+retry on failure; a server-enforced JSON mode is a planned addition. The full
+serving details — per-client usage, cost, and limits — are on
+[Using Your Own Fine-Tuned Model](lora.md).
 
 ## Getting help
 

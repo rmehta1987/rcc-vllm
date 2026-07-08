@@ -18,7 +18,7 @@
 #   you run mehta5's one managed install, you don't copy it. Your WRITABLE state
 #   (session files, usage/billing logs, gateway pointer, Slurm logs) is isolated
 #   under a PER-USER dir so colleagues never clobber each other:
-#       AISESSION_STATE_DIR  (default: /project/rcc/mehta5/ai-session-state/<you>)
+#       AISESSION_STATE_DIR  (default: $HOME/.ai-session/state)
 #   The OWUI chat DB lives privately in $HOME/.ai-session/openwebui-data (mode 700).
 #   and each user gets PER-USER default ports (derived from your UID) so two people
 #   on the same login node don't collide. Override any of these via env:
@@ -38,7 +38,7 @@ UID_NUM=$(id -u)
 
 # Per-user WRITABLE state root (isolates multi-tenant runtime + billing logs).
 # Threaded into gateway.py / ai_session.py / launch_ai_session.sh via this env var.
-AISESSION_STATE_DIR=${AISESSION_STATE_DIR:-/project/rcc/mehta5/ai-session-state/$U}
+AISESSION_STATE_DIR=${AISESSION_STATE_DIR:-$HOME/.ai-session/state}
 export AISESSION_STATE_DIR
 mkdir -p "$AISESSION_STATE_DIR/logs/gateway" "$AISESSION_STATE_DIR/run"
 

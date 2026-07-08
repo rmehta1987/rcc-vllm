@@ -49,7 +49,7 @@ UID_NUM=$(id -u)
 
 # Per-user WRITABLE state root (isolates multi-tenant runtime + billing logs).
 # Threaded into gateway.py / ai_session.py / launch_ai_session.sh via this env var.
-AISESSION_STATE_DIR=${AISESSION_STATE_DIR:-/project/rcc/mehta5/ai-session-state/$U}
+AISESSION_STATE_DIR=${AISESSION_STATE_DIR:-$HOME/.ai-session/state}
 export AISESSION_STATE_DIR
 mkdir -p "$AISESSION_STATE_DIR/logs/gateway" "$AISESSION_STATE_DIR/run"
 

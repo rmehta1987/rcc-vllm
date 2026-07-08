@@ -170,7 +170,7 @@ paragraph, visible in one request.
 ## How to read your usage summary
 
 `ai_session end` writes `<user>_<jobid>_<ts>_summary.json` under the state dir
-`/project/rcc/mehta5/ai-session-state/<user>/logs/usage/` when run via the
+`$HOME/.ai-session/state/logs/usage/` when run via the
 wrapper scripts (which set `AISESSION_STATE_DIR`), or under
 `ai-session/logs/usage/` when the tools are run directly without that variable,
 with: token source (per-request `usage` or `/metrics` delta), total tokens,

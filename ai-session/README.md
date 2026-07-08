@@ -465,7 +465,7 @@ negligible effect on the charge.
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `AISESSION_STATE_DIR` | `/project/rcc/mehta5/ai-session-state/<user>` | per-user writable root; billing logs land here |
+| `AISESSION_STATE_DIR` | `$HOME/.ai-session/state` | per-user writable root (under your own home); billing logs land here |
 | `GW_PORT` | `8400 + UID % 90` | per-user gateway port (override on clash) |
 | `MODEL` / `TP` / `CONSTRAINT` | `qwen2.5_coder_32B` / `2` / `A100` | model and serving tier |
 | `MAX_MODEL_LEN` | `32768` | served context length |
@@ -526,7 +526,7 @@ other user can read it.
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `AISESSION_STATE_DIR` | `/project/rcc/mehta5/ai-session-state/<user>` | per-user writable root for that user's own session, usage, and billing summaries |
+| `AISESSION_STATE_DIR` | `$HOME/.ai-session/state` | per-user writable root (under your own home) for that user's own session, usage, and billing summaries |
 | `AISESSION_BILLING_DIR` | `/project/rcc/mehta5/ai-session-billing` | central staff-only ledger (mode `2770`, group `rcc-staff`); `end` and the sacct sweep both record each charge here |
 | `GW_PORT` / `OWUI_PORT` | `8400 + UID % 90` / `3000 + UID % 90` | per-user gateway and UI ports (override on clash) |
 
@@ -686,7 +686,7 @@ Suggested cadence — a per-user cron entry that runs one pass every five minute
 
 ```cron
 # every 5 min: end MY session if it has been idle 30 min
-*/5 * * * *  AISESSION_STATE_DIR=/project/rcc/mehta5/ai-session-state/$USER /project/rcc/mehta5/conda-envs/vllm-probe/bin/python /project/rcc/mehta5/vllm/ai-session/idle_reaper.py --once --idle-min 30 >> $HOME/.ai-session/idle_reaper.log 2>&1
+*/5 * * * *  AISESSION_STATE_DIR=$HOME/.ai-session/state /project/rcc/mehta5/conda-envs/vllm-probe/bin/python /project/rcc/mehta5/vllm/ai-session/idle_reaper.py --once --idle-min 30 >> $HOME/.ai-session/idle_reaper.log 2>&1
 ```
 
 Or as a `systemd --user` timer paired with a `Type=oneshot` service that runs the same

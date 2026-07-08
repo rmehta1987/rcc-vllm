@@ -28,9 +28,12 @@ PY=/project/rcc/mehta5/conda-envs/vllm-probe/bin/python
 U=$(whoami)
 UID_NUM=$(id -u)
 
-# Same defaults as the wrappers (run_coding_agent.sh / run_browser_demo.sh):
-# shared read-only install, per-user writable state, UID-derived gateway port.
-export AISESSION_STATE_DIR=${AISESSION_STATE_DIR:-/project/rcc/mehta5/ai-session-state/$U}
+# Per-user writable state (vLLM + gateway logs, session key, billing receipts,
+# run/) lives under the user's OWN HOME, next to env/config/openwebui-data, so a
+# user needs NO write access to the shared /project/rcc/mehta5 install. Point
+# AISESSION_STATE_DIR at scratch instead if HOME quota is tight. The UID-derived
+# gateway port keeps two users on one login node from colliding.
+export AISESSION_STATE_DIR=${AISESSION_STATE_DIR:-$HOME/.ai-session/state}
 GW_PORT=${GW_PORT:-$((8400 + UID_NUM % 90))}
 export GW_PORT
 

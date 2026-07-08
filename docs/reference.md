@@ -64,9 +64,11 @@ The install is multi-tenant: code, model weights, and the serving environment ar
 shared and read-only, while everything a session writes goes to a per-user
 directory.
 
-- `AISESSION_STATE_DIR` is the per-user writable root (a per-user directory under
-  the service's state area by default). It holds session records, the gateway
-  pointer, per-request usage capture, billing receipts, and server logs.
+- `AISESSION_STATE_DIR` is the per-user writable root — `~/.ai-session/state`
+  under your own home directory by default, so a session needs no write access to
+  the shared install. It holds session records, the gateway pointer, per-request
+  usage capture, billing receipts, and server logs. Set it to a scratch path if
+  your home quota is tight.
 - `~/.ai-session/env` (mode 600) holds the current session's client settings —
   written by the start verbs and refreshed by `ai-session env` and
   `ai-session connect`.

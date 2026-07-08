@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import pwd
 import re
 import socket
 import sys
@@ -32,6 +33,14 @@ _BILLING = os.path.join(os.path.dirname(_HERE), "billing")
 if _BILLING not in sys.path:
     sys.path.insert(0, _BILLING)
 import su_formula as su  # noqa: E402
+
+
+def _real_user() -> str:
+    """Username from the REAL uid, never $USER (spoofable). Attribution only."""
+    try:
+        return pwd.getpwuid(os.getuid()).pw_name
+    except (KeyError, OSError):
+        return os.environ.get("USER") or "unknown"
 
 # Central staff-only accounting ledger. One JSON record per (session, source)
 # is written here in addition to the per-user usage summary, so staff can track
@@ -378,7 +387,7 @@ def write_usage_log(session: dict, requests: list, summary: dict, out_dir: str) 
     Returns {'jsonl': path|None, 'summary': path}.
     """
     os.makedirs(out_dir, exist_ok=True)
-    user = session.get("user", os.environ.get("USER", "unknown"))
+    user = session.get("user", _real_user())
     jobid = session.get("jobid", "nojob")
     ts = time.strftime("%Y%m%dT%H%M%S", time.localtime())
     stem = os.path.join(out_dir, f"{user}_{jobid}_{ts}")
@@ -433,7 +442,7 @@ def write_central_billing_record(session: dict, summary: dict,
     """
     try:
         out_dir = billing_dir or _billing_dir()
-        user = session.get("user", os.environ.get("USER", "unknown"))
+        user = session.get("user", _real_user())
         jobid = str(session.get("jobid", "nojob"))
         record = {
             "schema": "ai-session-billing/1",

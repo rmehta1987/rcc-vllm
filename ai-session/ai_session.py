@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pwd
 import subprocess
 import sys
 import time
@@ -66,10 +67,24 @@ _LICENSE_GATED = {
 
 
 # --------------------------------------------------------------------------- #
+# identity: derive the username from the REAL uid, never $USER/$LOGNAME (which a
+# caller can set to anyone). Every receipt, session file, license-ack, and the
+# central billing record is attributed with this, so it must not be spoofable.
+# The real GPU charge is enforced by Slurm against the job's --account regardless;
+# this keeps the service's own attribution honest too.
+# --------------------------------------------------------------------------- #
+def _real_user() -> str:
+    try:
+        return pwd.getpwuid(os.getuid()).pw_name
+    except (KeyError, OSError):
+        return os.environ.get("USER") or os.environ.get("LOGNAME") or "unknown"
+
+
+# --------------------------------------------------------------------------- #
 # license acknowledgment gate (restrictively-licensed --force models)
 # --------------------------------------------------------------------------- #
 def _license_ack_path(model_key: str) -> str:
-    user = os.environ.get("USER", "unknown")
+    user = _real_user()
     return os.path.join(LICENSE_ACK_DIR, f"{user}_{model_key}.accepted")
 
 
@@ -106,7 +121,7 @@ def _require_license_ack(model_key: str) -> None:
 
 def _write_license_ack(model_key: str, lic_path: str, ack_path: str, info: dict) -> None:
     os.makedirs(LICENSE_ACK_DIR, exist_ok=True)
-    user = os.environ.get("USER", "unknown")
+    user = _real_user()
     record = {
         "user": user,
         "model_key": model_key,
@@ -124,7 +139,7 @@ def _write_license_ack(model_key: str, lic_path: str, ack_path: str, info: dict)
 # session-file helpers
 # --------------------------------------------------------------------------- #
 def _session_path(jobid: str) -> str:
-    user = os.environ.get("USER", "unknown")
+    user = _real_user()
     return os.path.join(SESSION_DIR, f"{user}_{jobid}.json")
 
 
@@ -290,7 +305,7 @@ def cmd_start(args) -> int:
 
     session = {
         **launch,
-        "user": os.environ.get("USER", "unknown"),
+        "user": _real_user(),
         "submit_epoch": time.time(),
         "node": None,
         "start_epoch": None,
@@ -522,7 +537,7 @@ def cmd_connect(args) -> int:
             file_key = None
     has_key = bool(args.gateway_key or file_key)
     key = args.gateway_key or file_key or "ai-session"
-    starter = os.environ.get("USER", "the starter")
+    starter = _real_user()
 
     print(f"\n=== connect: session {session['jobid']} ({model}, state={state or 'GONE'}) ===")
     if has_key:

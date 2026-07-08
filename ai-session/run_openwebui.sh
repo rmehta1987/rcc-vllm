@@ -21,9 +21,12 @@ PORT=${1:-3000}
 # default it under the user's HOME (mode 700, owner-only). Storing it in the
 # group-readable project tree let any cluster user read another person's chats;
 # HOME is owner-only, so keep the chat DB there.
-# HF_HOME is a content-addressed model cache -> safe to share in project space.
+# HF_HOME is a model cache Open WebUI may WRITE to (it downloads embedding models
+# on first RAG use, since OFFLINE_MODE defaults to False). Default it under the
+# user's own state dir; the old /project/rcc/mehta5 default is not writable by
+# users outside rcc-staff, which would fail those downloads.
 export DATA_DIR=${DATA_DIR:-$HOME/.ai-session/openwebui-data}
-export HF_HOME=${HF_HOME:-/project/rcc/mehta5/hf_cache}
+export HF_HOME=${HF_HOME:-${AISESSION_STATE_DIR:-$HOME/.ai-session/state}/hf_cache}
 mkdir -p "$HOME/.ai-session" "$DATA_DIR" "$HF_HOME"
 # Lock the private home subtree to owner-only, so it stays unreadable to other
 # users even if HOME were ever loosened.

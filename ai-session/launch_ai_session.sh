@@ -22,8 +22,13 @@ set -euo pipefail
 
 REPO=/project/rcc/mehta5/vllm
 ENV_PATH=/project/rcc/mehta5/conda-envs/vllm-probe
-HF_CACHE=/project/rcc/mehta5/hf_cache
-INDUCTOR_CACHE=/project/rcc/mehta5/torchinductor_cache
+# HF + torch-inductor caches: the vLLM job WRITES these, so they must live where
+# the running user can write. Default (empty here) is resolved to the per-user
+# state dir below, once STATE_BASE is known. Override via env only if you point
+# them at another writable location; the old /project/rcc/mehta5 default is NOT
+# writable by users outside rcc-staff.
+HF_CACHE=${HF_CACHE:-}
+INDUCTOR_CACHE=${INDUCTOR_CACHE:-}
 
 # -- defaults (override via env or flags) ----------------------------------- #
 MODEL_KEY=${MODEL_KEY:-}
@@ -90,6 +95,11 @@ fi
 # matches ai_session.py/gateway.py _STATE), else next to the code (single-tenant).
 STATE_BASE="${AISESSION_STATE_DIR:-${REPO}/ai-session}"
 LOGDIR="${STATE_BASE}/logs/vllm"
+# Resolve the writable caches under the per-user state dir unless the caller
+# pointed them elsewhere. A path the running user cannot write would fail the
+# job AFTER the GPU is reserved and floor-billing has begun.
+HF_CACHE="${HF_CACHE:-${STATE_BASE}/hf_cache}"
+INDUCTOR_CACHE="${INDUCTOR_CACHE:-${STATE_BASE}/torchinductor_cache}"
 mkdir -p "${LOGDIR}" "${HF_CACHE}" "${INDUCTOR_CACHE}"
 
 # Pick a free-ish port if not supplied (job-name carries it: 'model_key:port').

@@ -10,6 +10,8 @@ same commands, same URL, same key, same billing.
 
 The service does not run the fine-tuning itself yet; you train elsewhere (for
 example on your own GPU allocation) and bring the resulting adapter directory.
+For a worked example of producing that adapter — dataset format, training script,
+and submission — see [Fine-Tuning a Model on Your Own Data](fine-tuning.md).
 
 ## What you need
 

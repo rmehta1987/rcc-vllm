@@ -2,27 +2,13 @@
 
 opencode and Cline are autonomous coding agents. They differ from [aider](aider.md)
 in how they drive the model: instead of asking for edits as plain text, they use
-native function calling (also called tool calling), in which the model returns a
+native function calling (tool calling), where the model returns a
 structured call — a function name plus JSON arguments — that the agent then executes
-(read a file, apply an edit, run a command). opencode is a supported client,
-verified against the service on 2026-07-03; it requires the two workaround files
+(read a file, apply an edit, run a command (grep), run a tool (squeue)). opencode is a supported client,
+and it requires the two workaround files
 described in Step 2, and occasional retries are needed even with them. aider remains
 the default and recommended client: it performs the same edits through the
 chat-completions API without function calling and needs no workarounds.
-
-Reliability status (verified 2026-07-03, opencode 1.14.41, session 51391003,
-`qwen2.5_coder_32B` on two A100-80GB with tool calling enabled, vLLM 0.10.2 with
-the `hermes` tool-call parser): three graded tasks — create a file, modify a
-function, and read a file then edit it based on the value read — passed 3 of 3
-through native tool calls. Out of the box, with a correct provider configuration
-but without the workaround files, 0 of 10 task runs passed: the served
-Qwen2.5-Coder-32B-Instruct checkpoint does not emit the `<tool_call>` marker tokens
-the parser matches, so the tool JSON streams back as plain text that opencode
-silently ignores (the server log shows zero parser exceptions; the failure is
-invisible on both ends). With the workaround files in place, 3 of 4 task runs
-passed on the first attempt and one needed a single retry. The session used 52
-requests (249,551 prompt tokens, 3,289 completion tokens) over 28 min 53 s and was
-billed 0.9622 SU at the reservation floor.
 
 Because these agents need function calling, the session must be started with tool
 calling enabled (`ai-session code --agent`); a session started for aider or
@@ -168,11 +154,10 @@ sizes its prompts correctly.
 
 The `mcp` block matters more than it looks: MCP servers from your personal
 configuration are advertised to the model as extra tools and inflate every prompt.
-In the 2026-07-03 verification, one personal MCP server pushed the first request to
-27,925 input tokens; the server rejected it (HTTP 400: input plus the 8,192-token output
-budget exceed the 32,768 context) and opencode surfaced no error at all.
 
-### AGENTS.md
+### AGENTS.md 
+
+This is mainly needed for **opencode** .
 
 Create `AGENTS.md` in the repository root with exactly the following content.
 Reason: the served Qwen2.5-Coder-32B-Instruct checkpoint does not generate the
@@ -263,7 +248,7 @@ Cline is a VS Code extension in the same class of tool: an autonomous agent driv
 by native tool calling. Configure it with the same three values — base URL
 `http://localhost:<GW_PORT>/v1`, API key the session access key, model
 `qwen2.5_coder_32B` — against a session started with `ai-session code --agent`.
-Cline has not been verified against this service. The missing `<tool_call>` marker
+Cline has not been **tested** yet. The missing `<tool_call>` marker
 tokens (see Step 2) are a property of the served model, not of opencode, so Cline
 is expected to need an equivalent rules file; its mechanism is `.clinerules`
 rather than `AGENTS.md`. aider is the fallback.

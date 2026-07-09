@@ -90,13 +90,15 @@ Because these duties bind whoever offers the model, ai-session refuses to serve
 
 ### Serving Llama 3.1: the acknowledgment gate
 
-`llama3.1_70B` is not in the served set, so it is reachable only through the
-advanced launcher's `--force` flag (an operator-level action; the launcher is
-documented in the operator guide). On top of `--force`, the first attempt to
-serve it is refused until you record that you accept the license. This is a
-deliberate, non-interactive gate so that scripts can satisfy it once and proceed:
-the serving command is refused until it is run with `ACCEPT_LLAMA_LICENSE=1` set in
-the environment.
+`llama3.1_70B` is served to any user — Llama 3.1 is free to run for research on
+university hardware — but the first attempt to serve it is refused until you
+record that you accept the license. This is a deliberate, non-interactive gate so
+that scripts can satisfy it once and proceed: the serving command is refused until
+it is run with `ACCEPT_LLAMA_LICENSE=1` set in the environment. The first time:
+
+```bash
+ACCEPT_LLAMA_LICENSE=1 ai-session chat --model llama3.1_70B
+```
 
 Setting `ACCEPT_LLAMA_LICENSE=1` writes a one-time acceptance record to your per-user
 state directory at `<state-dir>/logs/licenses/<user>_llama3.1_70B.accepted`. The
@@ -108,10 +110,10 @@ Without the acknowledgment, and with no record already on file, the start is
 refused before any GPU is reserved, and the refusal prints the on-disk license
 paths and the variable to set.
 
-The Apache-2.0 models are permissive and are not gated; `qwen2.5_0.5B`, though also
-served only with `--force` (it is a smoke-test checkpoint, not a user model), needs no
-license acknowledgment. `qwen2.5_72B` is in the served set and is not force-gated, but
-its attribution obligation above still applies when you host it for others.
+The Apache-2.0 models are permissive and are not gated; `qwen2.5_0.5B` is a
+smoke-test checkpoint (not a user model) and needs no license acknowledgment.
+`qwen2.5_72B` is served and is not license-gated, but its attribution obligation
+above still applies when you host it for others.
 
 ## Reading the authoritative text
 

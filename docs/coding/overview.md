@@ -26,7 +26,7 @@ counts for billing), and your client.
 
 | Step | Description | Command | Run on |
 |---|---|---|---|
-| 0 | Put `ai-session` on your PATH (once per shell) | `module use /project/rcc/mehta5/modulefiles && module load ai-session` | Login node |
+| 0 | Put `ai-session` on your PATH (once per shell) | `module load ai-session` | Login node |
 | 1 | Start the session; wait for the READY block and the printed client command | `ai-session code` (first run: add `--account <acct> --partition <part>`) | Login node |
 | 2 | Run the printed client command inside the git repository you want to edit | printed by `ai-session code` (aider by default) | Login node or Local machine |
 | 3 | Check what is running at any time; costs nothing | `ai-session status` | Login node |

@@ -67,7 +67,7 @@ The API base must include the `/v1` suffix.
 | `--weak-model openai/<key>` | Routes aider's auxiliary requests (commit messages, history summarization) to the same local model rather than to `api.openai.com`. |
 | `--model-metadata-file <path>` | Declares the model's context window (32768 tokens) and zero token cost to litellm. Without it, litellm cannot size prompts and prints `Unknown context window size`. |
 | `--edit-format diff` | Requests unified-diff edits instead of full-file rewrites. Pass `--edit-format whole` instead if diffs are rejected for a given file. |
-| `--analytics-disable` | Permanently disables aider's own usage telemetry. This is a client-side concern separate from the model traffic, which never leaves RCC; the [data residency note on the home page](../index.md#data-residency) covers the distinction. |
+| `--analytics-disable` | Permanently disables aider's own usage telemetry. This is a client-side concern separate from the model traffic, which never leaves RCC; the [data residency note on the home page](../index.md#data-location) covers the distinction. |
 
 The metadata file splits the 32768-token window as 28000 input tokens and 4096
 output tokens, so prompt plus generated tokens cannot exceed the window. It carries

@@ -28,14 +28,16 @@ MODEL_REGISTRY = {
     "qwen2.5_72B": f"{MODELS_ROOT}/Qwen2.5-72B-Instruct",   # Phase-1 production model (general chat)
     "qwen2.5_coder_32B": f"{MODELS_ROOT}/Qwen2.5-Coder-32B-Instruct",  # coding model (TP=2 footprint)
     "qwen3_4b": f"{MODELS_ROOT}/Qwen3-4B",                  # single-GPU benchmark anchor
-    "llama3.1_70B": f"{MODELS_ROOT}/Meta-Llama-3.1-70B-Instruct",  # cross-check / optional
+    "llama3.1_70B": f"{MODELS_ROOT}/Meta-Llama-3.1-70B-Instruct",  # served, behind a license ack
     "qwen2.5_0.5B": f"{MODELS_ROOT}/Qwen2.5-0.5B-Instruct", # smoke test only -- never a billing ref
 }
 
-# The only models actually served to users in Phase 1 (others are for benchmarking
-# / smoke). ai_session.py rejects start requests for keys outside this set.
-# qwen2.5_coder_32B is the coding-client default (code-specialized, half the GPUs of 72B).
-PHASE1_SERVED = {"qwen2.5_72B", "qwen2.5_coder_32B", "qwen3_4b"}
+# The models served to users (others are for benchmarking / smoke). ai_session.py
+# rejects start requests for keys outside this set. qwen2.5_coder_32B is the coding-
+# client default (code-specialized, half the GPUs of 72B). llama3.1_70B is served to
+# any user but gated behind a one-time license acknowledgment (see _LICENSE_GATED in
+# ai_session.py); its floor bills on GPU tier like every other model.
+PHASE1_SERVED = {"qwen2.5_72B", "qwen2.5_coder_32B", "qwen3_4b", "llama3.1_70B"}
 
 KNOWN_TIERS = ("h200", "h100", "l40s", "l40", "a100", "a40", "v100", "rtx6000")
 

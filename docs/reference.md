@@ -1,11 +1,9 @@
 # Command Reference
 
-This page collects every user-facing command of the ai-session service in one
-place: the `ai-session` command and its verbs, the values clients need, and
-scripted access to the API. The everyday paths are covered end to end on
+This page contains user-facing command of the ai-session service in one
+place: the `ai-session` command and its arguments. The specific paths are covered end to end on
 [Getting Started](getting-started.md) (browser chat) and
-[Coding Sessions](coding/overview.md); come here when you need the full option
-list or want to script against the service.
+[Coding Sessions](coding/overview.md).
 
 All commands on this page run **on the login node**. A session serves one model
 on cluster GPUs; the gateway — the small always-on relay the service runs on the
@@ -19,13 +17,11 @@ Service Units (SU), where 1 SU = 1 A100-GPU-hour; the formula and rates are on
 Once per shell:
 
 ```bash
-module use /project/rcc/mehta5/modulefiles
 module load ai-session
 ```
 
 This puts `ai-session` on your PATH and sets `AISESSION_HOME` to the shared
-install. The `module use` line is needed during the current testing phase; once
-RCC installs the module centrally, plain `module load ai-session` will suffice.
+install.
 
 ## Command summary
 
@@ -43,7 +39,7 @@ RCC installs the module centrally, plain `module load ai-session` will suffice.
 | Run a built-in tool server (agents call this) | `ai-session mcp run jobs` / `ai-session mcp run usage` | free |
 | Stop the session, free the GPUs, print the charge | `ai-session stop` | free (ends the billing) |
 
-The start verbs accept:
+The accepted arguments:
 
 | Option | Default | Purpose |
 |---|---|---|
@@ -60,7 +56,7 @@ The start verbs accept:
 
 ## Where session state lives
 
-The install is multi-tenant: code, model weights, and the serving environment are
+The LLM, coding tools, model weights, and the serving environment are
 shared and read-only, while everything a session writes goes to a per-user
 directory.
 
@@ -86,23 +82,25 @@ directory.
 | `qwen2.5_72B` | Qwen2.5-72B-Instruct | Yes (`chat` preset) | Qwen (Tongyi) community license |
 | `qwen2.5_coder_32B` | Qwen2.5-Coder-32B-Instruct | Yes (`code` preset) | Apache-2.0 |
 | `qwen3_4b` | Qwen3-4B | Yes (`fast` preset; also `code --model qwen3_4b` for cheap coding) | Apache-2.0 |
-| `llama3.1_70B` | Meta-Llama-3.1-70B-Instruct | Operators only | Llama 3.1 Community License + Acceptable Use Policy |
+| `llama3.1_70B` | Meta-Llama-3.1-70B-Instruct | Yes (`--model llama3.1_70B`, after a one-time license acknowledgment) | Llama 3.1 Community License + Acceptable Use Policy |
 | `qwen2.5_0.5B` | Qwen2.5-0.5B-Instruct | Operators only (smoke tests) | Apache-2.0 |
 
 The license terms and the obligations that apply when you serve these models to
 other people are set out on [Model licenses](licenses.md). Serving Llama 3.1
-additionally requires a one-time recorded acknowledgment, described there; ask
-the operators.
+additionally requires a one-time recorded acknowledgment.
 
 To serve a model you fine-tuned yourself alongside its base model, add
-`--lora NAME=PATH` to the start verb; requests whose model is `NAME` are answered
+`--lora NAME=PATH` ; requests whose model is `NAME` are answered
 by your fine-tune. Requirements and examples are on
 [Your Own Fine-Tuned Model](lora.md).
 
 Qwen3 sessions serve with a reasoning parser, so the model's chain of thought is
 returned in a separate `reasoning_content` field and the answer stays in
 `content` — the raw `<think>…</think>` block is not mixed into the reply. Qwen2.5
-and Llama models do not think and are served without it.
+and Llama models do not think and are served without it. Clients differ in whether
+they surface `reasoning_content`: opencode displays it as a Thinking block
+(`opencode run --thinking`, or in its TUI), while aider shows only the answer. See
+[opencode](coding/opencode.md#seeing-the-models-reasoning-qwen3-only).
 
 ## The session access key
 

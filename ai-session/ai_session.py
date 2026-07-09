@@ -51,8 +51,9 @@ LICENSE_ACK_DIR = os.path.join(_STATE, "logs", "licenses")  # per-user license a
 LAUNCHER = os.path.join(_HERE, "launch_ai_session.sh")  # code, not state -> always _HERE
 
 # Models whose licenses impose obligations when you SERVE them to others (as this
-# service does) and that are reachable only via `start --force`. Serving one of
-# these requires a recorded, per-user acknowledgment (see _require_license_ack).
+# service does). Any user may serve one, but only after recording a per-user
+# acknowledgment of the license (see _require_license_ack) -- this fires on every
+# start of a gated key, regardless of the served-set/--force path.
 # The Apache-2.0 models (coder_32B, qwen3_4b, 0.5B) are permissive and NOT gated;
 # only Llama 3.1 (Community License + Acceptable Use Policy) is. The 72B Qwen
 # community-license model is in PHASE1_SERVED and carries attribution/NOTICE
@@ -94,7 +95,7 @@ def _require_license_ack(model_key: str) -> None:
     Acceptance is per user and persistent: once ``ACCEPT_LLAMA_LICENSE=1`` writes
     the record, later starts reuse it (no env needed). This is deliberately the
     non-interactive env form so batch scripts work; the refusal message names the
-    env to set. Called only on the ``--force`` path for keys in ``_LICENSE_GATED``.
+    env to set. Called on every start of a key in ``_LICENSE_GATED``.
     """
     info = _LICENSE_GATED[model_key]
     lic_path = os.path.join(server.model_path(model_key), info["files"][0])
@@ -113,7 +114,7 @@ def _require_license_ack(model_key: str) -> None:
         f"  On-disk license: {on_disk}\n"
         f"  Serving it to others carries obligations (see docs/licenses.md).\n"
         f"  To accept and proceed non-interactively, set {info['env']}=1, e.g.:\n"
-        f"      {info['env']}=1 <your ai_session.py start ... --force command>\n"
+        f"      {info['env']}=1 ai-session chat --model {model_key}\n"
         f"  This writes a one-time acceptance record to {ack_path};\n"
         f"  it is required only the first time -- later starts reuse it."
     )
@@ -227,10 +228,11 @@ def cmd_start(args) -> int:
             f"{args.model!r} is not in PHASE1_SERVED {sorted(server.PHASE1_SERVED)}; "
             f"pass --force to serve it anyway."
         )
-    # License acknowledgment gate: a --force serve of a restrictively-licensed model
-    # (Llama 3.1) is refused until the user has recorded acceptance. Runs BEFORE any
-    # GPU job is submitted below.
-    if args.force and args.model in _LICENSE_GATED:
+    # License acknowledgment gate: serving a restrictively-licensed model (Llama 3.1)
+    # is refused until the user has recorded acceptance. Any user may serve it, but the
+    # first start must set ACCEPT_LLAMA_LICENSE=1. Runs BEFORE any GPU job is submitted,
+    # and independently of the served-set/--force path above.
+    if args.model in _LICENSE_GATED:
         _require_license_ack(args.model)
 
     # item 16: one running session per user. A GPU reservation is floor-billed for

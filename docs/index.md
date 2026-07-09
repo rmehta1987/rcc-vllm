@@ -1,31 +1,26 @@
 # AI Sessions on RCC
 
-ai-session is a local large-language-model service on the university's research
-computing cluster (RCC beagle3). Instead of sending data to a commercial provider,
-faculty and students run open Qwen models on the GPUs the university already has.
+ai-session is a local large-language-model service on the University of Chicago Research
+Computing Cluster (RCC). Instead of sending data to a commercial provider,
+faculty and students run open LLM models on the GPUs the university already has.
 Running the models here has three practical advantages over a cloud AI service:
 your prompts, code, and data never leave the university's systems, which matters
-for unpublished results; there is no subscription and no dollar charge — usage is
-accounted internally in Service Units (SU), a fair-usage unit, not money; and the
-served models are open-weights checkpoints you can name, pin, and reproduce in a
-paper. You start a session, which serves a model on cluster GPUs; you reach it
-through one stable web address from a browser chat window or a coding tool; and
-you stop it when you are done. The proven
-ways in are browser chat with Open WebUI ([Getting Started](getting-started.md))
-and command-line or in-editor coding tools ([Coding Sessions](coding/overview.md)).
+for unpublished results; the usage is accounted internally in Service Units (SU); and the
+served models are open-weights checkpoints you can publish for reproducible research and provenance. 
+You start a session, which serves a model on cluster GPUs, which is reached via ssh-tunnel. For chatting with the LLM you have two ways:
+browser chat with Open WebUI ([Getting Started](getting-started.md)) or command-line/in-editor coding tools ([Coding Sessions](coding/overview.md)).
 
-## The first five minutes
+## Starting a session
 
 From a login node:
 
 ```bash
-module use /project/rcc/mehta5/modulefiles   # goes away once RCC installs the module centrally
 module load ai-session
 
 ai-session chat      # chat in your browser, or:
-ai-session code      # a coding session for aider / Continue / opencode
+ai-session code      # a coding session for aider / Continue / opencode (see ([Coding Sessions](coding/overview.md)))
 
-ai-session status    # ready, still loading, or stopped?
+ai-session status    # ready, still loading, or stopped? # this will take a few minutes as the model loads
 ai-session stop      # done -- free the GPUs and print the charge
 ```
 
@@ -52,26 +47,25 @@ your laptop/login     ->   http://localhost:<port>/v1  -> moves every session
 - The **gateway** is a small always-on relay on a login node at a fixed port;
   it exists because the model server moves — it forwards to whichever server
   the current session is using, so the client sees one web address that never
-  changes between sessions, and it records per-request token usage, which is
-  the authoritative source for [billing](billing.md).
+  changes between sessions, and it records per-request token usage for [billing](billing.md).
 - The **client** — a browser chat window or a coding tool — is configured once
   against that address, over `localhost` on the login node or an SSH-forwarded
   port from your laptop.
 
-## Data residency
+## Data location
 
-The model executes on an RCC GPU node. The gateway executes on an RCC login
+The LLM executes on a RCC GPU node. The gateway executes on an RCC login
 node. The client reaches it over `localhost` or an SSH-forwarded port.
 Along this serving path — client to gateway to model server — no prompt, file
-content, or completion is transmitted to any service outside RCC. This is the
-operative difference from hosted assistants and is the reason the service is
+content, or completion is transmitted to any service outside RCC. This is the main
+difference from hosted assistants and is the reason the service is
 appropriate for unpublished or otherwise restricted code and data.
 
-!!! note "Coding-tool telemetry is a separate concern you control in your client"
+!!! note "Coding-tool monitor with external servers is a separate concern you control in your client"
     The statement above covers the serving path — the model traffic itself. The
     coding tool you run as the client (aider, Continue, opencode) is separate
-    software that may have its own usage telemetry, which phones home independently
-    of the model traffic and is outside this service's control. Disable it in your
+    software that may have its own usage telemetry, which independently could send
+    model traffic and is outside this service's control. Disable it in your
     own client: the aider commands documented here pass `--analytics-disable`, the
     documented Continue configuration sets `allowAnonymousTelemetry: false`, and the
     Open WebUI instance the browser launcher starts already has telemetry disabled
@@ -91,15 +85,17 @@ the preset's default.
 | `chat` | `qwen2.5_72B` | Qwen2.5-72B-Instruct | General chat | 8192 | 4 x A100-80GB | Qwen (Tongyi) community license |
 | `fast` | `qwen3_4b` | Qwen3-4B | Small and fast; lowest cost | 8192 | 1 x A100 | Apache-2.0 |
 
-A practical pattern is to start small and scale up: prototype your prompts,
+A good practice is to start small and scale up: prototype your prompts,
 scripts, or agent setup against `ai-session fast` — the small model loads
 quickest, waits least for free GPUs, and has the lowest floor cost (1.0 SU per
 hour) — and move to the coder or 72B model once the workflow works. The larger
 models answer better; they do not need different client configuration.
 
-A Qwen2.5-0.5B-Instruct checkpoint (Apache-2.0) is also staged for operator smoke
-tests, and a Meta-Llama-3.1-70B-Instruct checkpoint (Llama 3.1 Community License plus
-an Acceptable Use Policy) for cross-checks; neither is offered for user sessions.
+A Meta-Llama-3.1-70B-Instruct checkpoint (Llama 3.1 Community License plus an
+Acceptable Use Policy) is also available to any user with `--model llama3.1_70B`,
+once you record a one-time license acknowledgment (Llama 3.1 is free to run for
+research on university hardware). A Qwen2.5-0.5B-Instruct checkpoint (Apache-2.0)
+is staged for smoke tests only and is not offered for user sessions.
 Guidance on choosing between the served models is on the
 [coding overview](coding/overview.md) page. The license obligations that apply when
 you serve these models to other people — attribution for the Qwen 72B model, the
@@ -107,7 +103,7 @@ acknowledgment gate for Llama — are set out on the [model licenses](licenses.m
 
 !!! note "GPU nodes have no internet access"
     Only pre-staged models can be served; a session cannot download weights. New
-    models are staged by the operators on request.
+    models are staged by the users on request.
 
 ## What it costs, in one line
 
@@ -123,8 +119,7 @@ examples are on the [billing page](billing.md).
     session with `ai-session stop` as soon as you finish working.
 
 !!! note "ai-session SUs are not RCC allocation Service Units"
-    The RCC user guide states that jobs on beagle3 consume no RCC service
-    units. The SUs described here are the ai-session service's own fair-usage
+    The SUs described here are the ai-session service's own fair-usage
     accounting, defined in its [billing policy](billing.md); they are not
     deducted from any RCC allocation.
 

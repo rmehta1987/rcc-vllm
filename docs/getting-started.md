@@ -24,7 +24,7 @@ For coding tools (aider, Continue, opencode) against the same service, see
 
 | Step | Description | Command | Run on |
 |---|---|---|---|
-| [0](#step-0-load-the-module) | Put `ai-session` on your PATH | `module use /project/rcc/mehta5/modulefiles && module load ai-session` | Login node |
+| [0](#step-0-load-the-module) | Put `ai-session` on your PATH | `module load ai-session` | Login node |
 | [1](#step-1-start-the-session) | Start the session and the chat UI (first run: add `--account <acct> --partition <part>`) | `ai-session chat` | Login node |
 | [2](#step-2-open-the-ssh-tunnel) | Forward the UI port to your machine | `ssh -N -L <UI_PORT>:localhost:<UI_PORT> -J <user>@midway3.rcc.uchicago.edu <user>@<login-node>` | Local machine |
 | [3](#step-3-chat-in-the-browser) | Chat | Browse `http://localhost:<UI_PORT>` | Local machine |
@@ -33,9 +33,10 @@ For coding tools (aider, Continue, opencode) against the same service, see
 
 ## Prerequisites
 
-- Membership in the `rcc-staff` group with read access to the project tree
-  `/project/rcc/mehta5`. The shared environment, model weights, and commands are
-  read-only to the group; there is nothing to install or copy.
+- **An RCC account.** No special group membership is required. The shared
+  environment, model weights, and commands under `/project/rcc/mehta5` are
+  readable by any RCC user and run read-only, so there is nothing to install or
+  copy.
 - A **Slurm account and GPU partition** to run the GPU job under. These are unique
   to you and your PI, and the service has no default: the first time you start a
   session you pass them with `--account` and `--partition`, and they are then
@@ -55,13 +56,10 @@ from your numeric user ID, so two people on the same login node do not collide.
 Once per shell, **on the login node**:
 
 ```bash
-module use /project/rcc/mehta5/modulefiles
 module load ai-session
 ```
 
-This puts the `ai-session` command on your PATH. The `module use` line is needed
-during the current testing phase; once RCC installs the module centrally, plain
-`module load ai-session` will suffice.
+This puts the `ai-session` command on your PATH.
 
 ## Step 1: start the session
 

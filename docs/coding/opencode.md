@@ -236,6 +236,27 @@ re-issue the instruction (in the verification this occurred in 1 of 4 task runs)
 if it recurs persistently, check that `AGENTS.md` is present and switch to
 [aider](aider.md) if needed. See also [Troubleshooting](../troubleshooting.md).
 
+### Seeing the model's reasoning (Qwen3 only)
+
+The Qwen3 models think before answering. Served with `--reasoning-parser qwen3`,
+their chain of thought comes back in a separate `reasoning_content` field, kept
+out of the answer (see [Command Reference](../reference.md)). opencode reads that
+field and displays it as a **Thinking** block, but the display is off by default.
+
+To use it, start a Qwen3 session and point opencode at that model:
+
+```bash
+ai-session code --model qwen3_4b --agent           # serve a thinking model
+# in opencode.json set "model": "rcc/qwen3_4b" and add it under the provider's models
+opencode run --thinking --model rcc/qwen3_4b "…"   # prints a "Thinking: …" block, then the answer
+```
+
+The interactive TUI shows the thinking block inline above each reply. Only the
+Qwen3 models reason this way (`qwen3_4b` today; a larger Qwen3 is being staged);
+the default `qwen2.5_coder_32B` and the Qwen2.5/Llama models do not think, so
+`--thinking` has no effect with them. aider, by contrast, does not surface
+`reasoning_content` against this endpoint — it shows only the answer.
+
 ## Cline
 
 Cline is a VS Code extension in the same class of tool: an autonomous agent driven

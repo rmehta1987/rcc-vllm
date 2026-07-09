@@ -8,7 +8,7 @@
 # current `ai_session start` published.
 #
 # Usage:  bash ai-session/run_openwebui.sh [PORT]   (default 3000, binds 127.0.0.1)
-# Then from your laptop:  ssh -N -L 3000:localhost:3000 mehta5@<this-login-node>
+# Then from your laptop:  ssh -N -f -L 3000:localhost:3000 <you>@<this-login-node>.rcc.uchicago.edu
 #                         browse http://localhost:3000
 set -euo pipefail
 

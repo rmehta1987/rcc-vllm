@@ -238,8 +238,8 @@ One-shot (non-interactive) mode -- good for scripts/batch, no REPL:
 Other clients can use the SAME endpoint (see ai-session/CODING_AGENTS.md):
   base URL  http://localhost:${GW_PORT}/v1     API key  ${KEY}     model  ${MODEL}
 
-(If you'd rather run aider on your LAPTOP, first tunnel the gateway port:
-  ssh -N -L ${GW_PORT}:localhost:${GW_PORT} -J ${U}@midway3.rcc.uchicago.edu ${U}@${login}
+(If you'd rather run aider on your LAPTOP, first tunnel the gateway port (one login, -f backgrounds it):
+  ssh -N -f -L ${GW_PORT}:localhost:${GW_PORT} ${U}@${login}.rcc.uchicago.edu
  then use the same command on your laptop against http://localhost:${GW_PORT}/v1.)
 
 The SU clock is running. When done (frees the GPU, stops billing):

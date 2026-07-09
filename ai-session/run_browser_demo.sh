@@ -200,9 +200,9 @@ do_up() {
   request (401). Saved (mode 600, only you can read) at:
       ${KEYFILE}
 
-On your LAPTOP, open the tunnel to THIS login node ($login):
+On your LAPTOP, open the tunnel to THIS login node ($login) -- one login, -f backgrounds it:
 
-  ssh -N -L ${OWUI_PORT}:localhost:${OWUI_PORT} -J ${U}@midway3.rcc.uchicago.edu ${U}@${login}
+  ssh -N -f -L ${OWUI_PORT}:localhost:${OWUI_PORT} ${U}@${login}.rcc.uchicago.edu
 
 then browse:   http://localhost:${OWUI_PORT}      (pick model '${MODEL}')
 

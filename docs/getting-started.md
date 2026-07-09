@@ -26,7 +26,7 @@ For coding tools (aider, Continue, opencode) against the same service, see
 |---|---|---|---|
 | [0](#step-0-load-the-module) | Put `ai-session` on your PATH | `module load ai-session` | Login node |
 | [1](#step-1-start-the-session) | Start the session and the chat UI (first run: add `--account <acct> --partition <part>`) | `ai-session chat` | Login node |
-| [2](#step-2-open-the-ssh-tunnel) | Forward the UI port to your machine | `ssh -N -L <UI_PORT>:localhost:<UI_PORT> -J <user>@midway3.rcc.uchicago.edu <user>@<login-node>` | Local machine |
+| [2](#step-2-open-the-ssh-tunnel) | Forward the UI port to your machine | `ssh -N -f -L <UI_PORT>:localhost:<UI_PORT> <user>@<login-node>.rcc.uchicago.edu` | Local machine |
 | [3](#step-3-chat-in-the-browser) | Chat | Browse `http://localhost:<UI_PORT>` | Local machine |
 | [4](#step-4-check-status) | Check what is running (no charge) | `ai-session status` | Login node |
 | [5](#step-5-stop-and-read-the-charge) | Stop everything and print the SU receipt | `ai-session stop` | Login node |
@@ -114,9 +114,9 @@ and model filled in). If it does not, see [Troubleshooting](troubleshooting.md).
   The gateway now REQUIRES this key. The Open WebUI started here already uses it,
   so YOUR browser tab works out of the box. ...
 
-On your LAPTOP, open the tunnel to THIS login node (<login-node>):
+On your LAPTOP, open the tunnel to THIS login node (<login-node>) -- one login, -f backgrounds it:
 
-  ssh -N -L <UI_PORT>:localhost:<UI_PORT> -J <user>@midway3.rcc.uchicago.edu <user>@<login-node>
+  ssh -N -f -L <UI_PORT>:localhost:<UI_PORT> <user>@<login-node>.rcc.uchicago.edu
 
 then browse:   http://localhost:<UI_PORT>
 ==============================================================
@@ -129,22 +129,27 @@ directly. Run the tunnel command that the READY block printed **on your local
 machine** (it is already filled in there; the general form is below):
 
 ```bash
-ssh -N -L <UI_PORT>:localhost:<UI_PORT> -J <user>@midway3.rcc.uchicago.edu <user>@<login-node>
+ssh -N -f -L <UI_PORT>:localhost:<UI_PORT> <user>@<login-node>.rcc.uchicago.edu
 ```
 
 Replace:
 
 - `<UI_PORT>` with the UI port printed in the READY block.
 - `<user>` with your CNetID.
-- `<login-node>` with the short hostname of the login node where you started the
-  session; the READY block prints it. The `-J` jump through
-  `midway3.rcc.uchicago.edu` lands you on that specific node.
+- `<login-node>` with the login node where you started the session (e.g.
+  `midway3-login4`); the READY block names it. The RCC login nodes are directly
+  reachable — they are the same hosts the `midway3.rcc.uchicago.edu` round-robin
+  points at — so this is a single connection with **one login prompt**.
 
-The command prints nothing and does not return; `-N` means "forward ports only, run
-no remote command". Leave this terminal open for the whole session. If your SSH
-setup already reaches the specific login node directly, the jump host is
-unnecessary: `ssh -N -L <UI_PORT>:localhost:<UI_PORT>
-<user>@<login-node>.rcc.uchicago.edu`.
+`-N` means "forward ports only, run no remote command"; `-f` backgrounds the tunnel
+once it connects, so you can close the terminal (stop it later by killing the ssh
+process, e.g. `pkill -f "ssh -N -f -L <UI_PORT>"`).
+
+Connect to the **specific** node the READY block names, not the
+`midway3.rcc.uchicago.edu` alias — the alias may land you on a different login node
+than the one running your UI. Only if your network cannot reach that node directly,
+jump through the alias as a fallback (this authenticates **twice**):
+`ssh -N -f -L <UI_PORT>:localhost:<UI_PORT> -J <user>@midway3.rcc.uchicago.edu <user>@<login-node>`.
 
 ??? question "What is an SSH tunnel?"
     `ssh -L <port>:localhost:<port> ...` makes your local machine listen on
@@ -200,9 +205,8 @@ may be on the same login node, the gateway binds to `127.0.0.1` and accepts only
 requests that carry the key, so no one else on the node can use your session by
 accident. To let a labmate use it, give them the key and have them:
 
-1. open their own SSH tunnel to your session's port (`ssh -N -L
-   <GW_PORT>:localhost:<GW_PORT> -J <them>@midway3.rcc.uchicago.edu
-   <them>@<login-node>`), then
+1. open their own SSH tunnel to your session's port (`ssh -N -f -L
+   <GW_PORT>:localhost:<GW_PORT> <them>@<login-node>.rcc.uchicago.edu`), then
 2. set the key as the OpenAI API key in whatever client they use (in Open WebUI,
    Settings > Connections > API Key; for aider or a script, `OPENAI_API_KEY`).
 

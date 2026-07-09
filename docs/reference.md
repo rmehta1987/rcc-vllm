@@ -96,6 +96,29 @@ On the roadmap, as H200 capacity and multi-node serving come online:
 smoke test passes, and the **GLM-5.1** and **GLM-5.2** (FP8) models will be added
 — GLM-5.2 needs multi-node H200 serving that is not yet in place.
 
+### Rough capability frame of reference
+
+These are **approximate, task-dependent positionings** against closed ("frontier")
+models, drawn from public 2026 leaderboards and third-party comparisons — **not** a
+controlled evaluation on this hardware. Closed models advance continuously and
+capability varies widely by task (coding vs. reasoning vs. general chat), so treat
+this only as a ballpark for picking a model, not a claim of parity.
+
+| Served / staged model | Rough closed-weight analog | Basis (approximate) |
+|---|---|---|
+| `qwen3_4b` | GPT-4o-mini class (light tasks) | 4B thinking model; strong on math for its size |
+| `qwen2.5_coder_32B` | ≈ GPT-4o on coding (2024) | matched GPT-4o on several code benchmarks at release |
+| `qwen3_32B` | o1-mini / GPT-4o-class reasoning | thinking model; multi-step reasoning |
+| `qwen2.5_72B`, `llama3.1_70B` | GPT-4-turbo / GPT-4o-mini (general) | strong 2024 general models, a generation behind 2026 frontier |
+| `qwen3.5_122B` *(staged)* | ≈ Claude Sonnet 4.5 / GPT-5-mini tier | MoE; leads GPT-5-mini on tool-use (BFCL-V4 72.2 vs 55.5); trails Claude Opus |
+| **GLM-5.2** *(roadmap)* | frontier-adjacent to Claude Opus 4.8 | within ~1 pt of Opus 4.8 on FrontierSWE (74.4 vs 75.1), ~4 pts on Terminal-Bench (81 vs 85); ahead of GPT-5.5 on SWE-bench Pro. Opus still leads long-horizon agentic. |
+| **GLM-5.1** *(roadmap)* | prior-gen frontier / GPT-5-mini tier | a clear step below 5.2 (Terminal-Bench 62 vs 81) |
+
+The open models trade some frontier capability for running entirely on RCC
+hardware (no data leaves the cluster) at no dollar cost — GLM-5.2, for instance, is
+frontier-adjacent on coding/agentic benchmarks at roughly a sixth the token cost of
+a closed model when self-hosted.
+
 To serve a model you fine-tuned yourself alongside its base model, add
 `--lora NAME=PATH` ; requests whose model is `NAME` are answered
 by your fine-tune. Requirements and examples are on

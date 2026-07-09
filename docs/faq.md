@@ -46,7 +46,9 @@ sent to any outside provider. Your browser-chat history is stored in a private d
 your home folder that other users cannot read. One caveat: coding tools can have their own
 telemetry that is separate from the model service. The service disables that telemetry where
 it controls the configuration, but you should confirm the settings in any client you install
-yourself.
+yourself. A second caveat, opt-in: if you start browser chat with `AISESSION_TOOLS=1` (web
+search, URL fetch, reference lookup — see below), those specific tool requests send your query
+terms to services outside RCC. They are off unless you set that flag.
 
 ## Connecting and sharing
 
@@ -75,7 +77,20 @@ A vision model (for images) is still on the roadmap.
 Whichever you end up on, start small and scale up: get your prompts or agent setup working
 against the small model first — it loads faster, spends less time waiting for free GPUs, and
 costs the least per hour — then switch to a larger model without changing any client
-configuration. If you need larger, ask; new models are staged on request.
+configuration. If you need larger, ask; new models are staged on request. For a rough sense of
+how these open models compare to closed "frontier" models, see the
+[capability frame of reference](reference.md#rough-capability-frame-of-reference).
+
+### Can the browser chat search the web or find papers?
+
+Yes, opt-in. Start browser chat with `AISESSION_TOOLS=1 ai-session chat` to add three tools you
+enable per conversation in Open WebUI: web search, URL fetch, and academic reference search
+(arXiv, bioRxiv, medRxiv, PubMed, Semantic Scholar, via the open-source `paper-search-mcp`).
+Web search works with any model; for the model to *autonomously* call the reference tools, start
+a tool-calling model — `AISESSION_TOOLS=1 ai-session chat --model qwen3_32B`. These tools reach
+outside RCC (see [Is my data private?](#is-my-data-private) and
+[Getting Started](getting-started.md#web-search-and-reference-tools-opt-in)); they are off by
+default.
 
 ## Coding agents, MCP, and building agents
 

@@ -52,5 +52,33 @@ export DO_NOT_TRACK=true
 export SCARF_NO_ANALYTICS=true
 export OFFLINE_MODE=${OFFLINE_MODE:-False}
 
+# --- Optional web + reference tools (OPT-IN; default OFF preserves "nothing leaves RCC") ---
+# Enable with AISESSION_TOOLS=1. Adds three capabilities the user turns on per chat:
+#   1. Web search (RAG; UI-orchestrated, so it works with ANY served model, no tool-calling)
+#   2. URL fetch (paste a link; Open WebUI loads and injects it)
+#   3. Academic paper search -- arXiv/bioRxiv/medRxiv/PubMed/Semantic Scholar via the public
+#      paper-search-mcp server, exposed to Open WebUI as an OpenAPI tool server behind mcpo.
+# All three reach EXTERNAL services from the login node (only the GPU node is air-gapped), so
+# the query terms leave RCC for those requests -- documented as a deliberate, opt-in tradeoff.
+if [ "${AISESSION_TOOLS:-0}" = "1" ]; then
+  export ENABLE_WEB_SEARCH=True
+  export WEB_SEARCH_ENGINE=${WEB_SEARCH_ENGINE:-duckduckgo}   # keyless; override for searxng/tavily/brave/...
+  export ENABLE_WEB_LOADER=True
+
+  TOOLS_ENV=/project/rcc/mehta5/tools-env
+  RUN_DIR="${AISESSION_STATE_DIR:-$HERE}/run"
+  MCPO_PORT=${MCPO_PORT:-$((PORT + 500))}
+  if [ -x "$TOOLS_ENV/bin/mcpo" ]; then
+    "$TOOLS_ENV/bin/mcpo" --host 127.0.0.1 --port "$MCPO_PORT" -- "$TOOLS_ENV/bin/paper-search-mcp" \
+      > "$RUN_DIR/mcpo.log" 2>&1 &
+    echo $! > "$RUN_DIR/mcpo.pid"   # so `ai-session stop` / run_browser_demo.sh down can reap it
+    export TOOL_SERVER_CONNECTIONS='[{"url":"http://127.0.0.1:'"$MCPO_PORT"'","path":"openapi.json","auth_type":"none","config":{"enable":true},"info":{"id":"paper-search","name":"Academic paper search (arXiv/bioRxiv/PubMed/Semantic Scholar)"}}]'
+    echo "[openwebui] tools ON: web-search=$WEB_SEARCH_ENGINE, URL-fetch, paper-search (mcpo 127.0.0.1:$MCPO_PORT)" >&2
+  else
+    echo "[openwebui] AISESSION_TOOLS=1 but $TOOLS_ENV/bin/mcpo missing; web-search + URL-fetch on, paper-search OFF" >&2
+  fi
+  echo "[openwebui] NOTE: web/reference tools reach EXTERNAL services -- query terms leave RCC for those requests." >&2
+fi
+
 echo "[openwebui] DATA_DIR=$DATA_DIR (private, home dir, mode 700)  backend=$OPENAI_API_BASE_URL  port=$PORT (127.0.0.1)"
 exec "$OWUI_ENV/bin/open-webui" serve --host 127.0.0.1 --port "$PORT"

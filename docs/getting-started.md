@@ -271,6 +271,41 @@ read the receipt fields, and the full rate table behind them, are on
 Verification: run `ai-session status` again; it should report no session running
 and no access key set.
 
+## Web search and reference tools (opt-in)
+
+By default the browser chat is fully self-contained: nothing you type leaves RCC.
+You can optionally give the chat three tools that reach the internet — start the
+session with `AISESSION_TOOLS=1`:
+
+```bash
+AISESSION_TOOLS=1 ai-session chat
+```
+
+This enables, as per-chat toggles inside Open WebUI:
+
+1. **Web search** — turn on the search toggle (globe icon) in a message; Open WebUI
+   runs the search on the login node, fetches the top results, and feeds them to the
+   model. This is orchestrated by the UI, so it works with **any** model, including
+   the 72B `chat` preset (no tool-calling model required). The default engine is
+   keyless DuckDuckGo; override `WEB_SEARCH_ENGINE` (e.g. `searxng`, `tavily`) and its
+   key/URL for another provider.
+2. **URL fetch** — paste a link in a message and the page is loaded and summarized.
+3. **Reference search** — an academic tool server (arXiv, bioRxiv, medRxiv, PubMed,
+   Semantic Scholar, and more, via the open-source `paper-search-mcp` behind `mcpo`)
+   appears under the message **Tools** menu. For the model to call it **autonomously**
+   you need a tool-calling model — start a Qwen3 session, `AISESSION_TOOLS=1
+   ai-session chat --model qwen3_32B` — since the `chat` 72B preset does not emit
+   tool calls reliably.
+
+!!! warning "This changes data residency — it is why the tools are off by default"
+    Web search, URL fetch, and reference lookups send your **query terms** (and, for
+    URL fetch, the requested address) to services **outside RCC** — the search engine,
+    the fetched site, or the scholarly APIs. The model itself still runs on-cluster and
+    your prompts are not sent wholesale, but these specific tool requests leave RCC. Use
+    them only for non-sensitive queries. Self-hosting SearXNG (`WEB_SEARCH_ENGINE=searxng`)
+    or restricting to the scholarly sources narrows the exposure. Without
+    `AISESSION_TOOLS=1`, none of this is active and the session stays fully local.
+
 ## Where each piece runs
 
 | Piece | Runs on | Charged |

@@ -106,7 +106,9 @@ They are being staged now; GLM-5.2 in particular needs multi-node serving that i
 not yet in place, so these are on the roadmap rather than servable today.
 
 Guidance on choosing between the served models is on the
-[coding overview](coding/overview.md) page. The license obligations that apply when
+[coding overview](coding/overview.md) page, and a rough capability frame of
+reference against closed "frontier" models is in the
+[Command Reference](reference.md#rough-capability-frame-of-reference). The license obligations that apply when
 you serve these models to other people — attribution for the Qwen 72B model, the
 acknowledgment gate for Llama — are set out on the [model licenses](licenses.md) page.
 

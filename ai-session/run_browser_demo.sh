@@ -238,6 +238,15 @@ do_down() {
     done < "$PIDFILE"
     rm -f "$PIDFILE"
   fi
+  # reap the optional paper-search tool server (mcpo), if AISESSION_TOOLS started one.
+  if [ -f "$RUN_DIR/mcpo.pid" ]; then
+    mpid=$(cat "$RUN_DIR/mcpo.pid" 2>/dev/null || true)
+    if [ -n "${mpid:-}" ] && kill -0 "$mpid" 2>/dev/null; then
+      kill "$mpid" 2>/dev/null || true
+      echo "    stopped paper-search tool server (mcpo pid $mpid)"; stopped=1
+    fi
+    rm -f "$RUN_DIR/mcpo.pid"
+  fi
   # belt-and-suspenders: kill whatever still owns MY ports.
   # NB: by PORT OWNER via ss -- never `pkill -f`, whose pattern self-matches this shell.
   for port in "$GW_PORT" "$OWUI_PORT"; do

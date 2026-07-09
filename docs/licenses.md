@@ -20,14 +20,20 @@ after `module load ai-session`.
 |---|---|---|---|
 | `qwen2.5_coder_32B` | Apache-2.0 | `<models>/Qwen2.5-Coder-32B-Instruct/LICENSE` | Nothing beyond keeping the license and any `NOTICE` with redistributed weights. |
 | `qwen3_4b` | Apache-2.0 | `<models>/Qwen3-4B/LICENSE` | Same as above. |
+| `qwen3_32B` | Apache-2.0 | `<models>/Qwen3-32B/LICENSE` | Same as above. |
 | `qwen2.5_0.5B` | Apache-2.0 | `<models>/Qwen2.5-0.5B-Instruct/LICENSE` | Same as above. |
 | `qwen2.5_72B` | Qwen (Tongyi) community license | `<models>/Qwen2.5-72B-Instruct/LICENSE` | Retain the Qwen attribution notice; observe the "Built with Qwen" and large-scale-use terms below. |
 | `llama3.1_70B` | Llama 3.1 Community License + Acceptable Use Policy | `<models>/Meta-Llama-3.1-70B-Instruct/LICENSE` and `.../USE_POLICY.md` | Provide the license, display "Built with Llama", follow the Acceptable Use Policy, and record acceptance via the [acknowledgment gate](#serving-llama-31-the-acknowledgment-gate). |
 
+Models on the roadmap (see [Command Reference](reference.md#models)) will be added
+to this table with their licenses when they become servable: `qwen3.5_122B`
+(Qwen3.5-122B-A10B) is Apache-2.0; the GLM-5.1 / GLM-5.2 license terms will be
+recorded here before those models are offered.
+
 ## The Apache-2.0 models
 
-`qwen2.5_coder_32B`, `qwen3_4b`, and `qwen2.5_0.5B` are released under the Apache
-License, Version 2.0. Apache-2.0 is a permissive open-source license: it places no
+`qwen2.5_coder_32B`, `qwen3_4b`, `qwen3_32B`, and `qwen2.5_0.5B` are released under
+the Apache License, Version 2.0. Apache-2.0 is a permissive open-source license: it places no
 restriction on serving the model to other users and imposes no in-product attribution
 requirement. The only standing obligation is that if you redistribute the weights
 themselves (copy them elsewhere, not merely serve inference from them), you keep the

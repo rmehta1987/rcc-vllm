@@ -192,11 +192,16 @@ on a single GPU with `ai-session code --model qwen3_4b`; it holds one GPU at the
 1.0 SU/h floor and, unlike the coder model, emits native tool calls reliably, so
 it is also the small option for `--agent` clients and MCP tools (see
 [opencode and Cline](opencode.md) and [Agent responsibilities](agents.md)).
+For a coding model that reasons before answering, serve `qwen3_32B`
+(`ai-session code --model qwen3_32B`): a Qwen3 thinking model on two A100s whose
+chain of thought is returned separately from the answer — visible in opencode with
+`--thinking` (see [opencode](opencode.md#seeing-the-models-reasoning-qwen3-only)).
 
 | Model key | Parameters | GPUs it runs on | Prefill (tok/s) | Decode (tok/s) | Reservation floor |
 |---|---|---|---:|---:|---:|
 | `qwen3_4b` (cheapest; debugging, simple edits, tool calling) | 4B | 1 x A100-80GB | — | — | 1.0 SU/h |
 | `qwen2.5_coder_32B` (default) | 32B | 2 x A100-80GB | 4773 | 1679 | 2.0 SU/h |
+| `qwen3_32B` (thinking; reasons before editing) | 32B | 2 x A100-80GB | — | — | 2.0 SU/h |
 | `qwen2.5_72B` | 72B | 4 x A100-80GB | 2901 | 1123 | 4.0 SU/h |
 | `qwen2.5_72B` (H200 option) | 72B | 2 x H200 | 7594 | 2329 | 6.0 SU/h |
 

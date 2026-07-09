@@ -82,12 +82,19 @@ directory.
 | `qwen2.5_72B` | Qwen2.5-72B-Instruct | Yes (`chat` preset) | Qwen (Tongyi) community license |
 | `qwen2.5_coder_32B` | Qwen2.5-Coder-32B-Instruct | Yes (`code` preset) | Apache-2.0 |
 | `qwen3_4b` | Qwen3-4B | Yes (`fast` preset; also `code --model qwen3_4b` for cheap coding) | Apache-2.0 |
+| `qwen3_32B` | Qwen3-32B | Yes (`--model qwen3_32B`; thinking model, A100 TP=2) | Apache-2.0 |
+| `qwen3.5_122B` | Qwen3.5-122B-A10B (FP8) | Staged; needs H200 (FP8 MoE, TP=4) — smoke test pending | Apache-2.0 |
 | `llama3.1_70B` | Meta-Llama-3.1-70B-Instruct | Yes (`--model llama3.1_70B`, after a one-time license acknowledgment) | Llama 3.1 Community License + Acceptable Use Policy |
 | `qwen2.5_0.5B` | Qwen2.5-0.5B-Instruct | Operators only (smoke tests) | Apache-2.0 |
 
 The license terms and the obligations that apply when you serve these models to
 other people are set out on [Model licenses](licenses.md). Serving Llama 3.1
 additionally requires a one-time recorded acknowledgment.
+
+On the roadmap, as H200 capacity and multi-node serving come online:
+`qwen3.5_122B` (Qwen3.5-122B-A10B, FP8) moves from staged to served once its H200
+smoke test passes, and the **GLM-5.1** and **GLM-5.2** (FP8) models will be added
+— GLM-5.2 needs multi-node H200 serving that is not yet in place.
 
 To serve a model you fine-tuned yourself alongside its base model, add
 `--lora NAME=PATH` ; requests whose model is `NAME` are answered

@@ -91,11 +91,20 @@ quickest, waits least for free GPUs, and has the lowest floor cost (1.0 SU per
 hour) — and move to the coder or 72B model once the workflow works. The larger
 models answer better; they do not need different client configuration.
 
-A Meta-Llama-3.1-70B-Instruct checkpoint (Llama 3.1 Community License plus an
-Acceptable Use Policy) is also available to any user with `--model llama3.1_70B`,
-once you record a one-time license acknowledgment (Llama 3.1 is free to run for
-research on university hardware). A Qwen2.5-0.5B-Instruct checkpoint (Apache-2.0)
-is staged for smoke tests only and is not offered for user sessions.
+A Qwen3-32B checkpoint (Apache-2.0) is also available with `--model qwen3_32B`: a
+thinking model whose chain of thought is returned separately from the answer,
+served on two A100s. A Meta-Llama-3.1-70B-Instruct checkpoint (Llama 3.1 Community
+License plus an Acceptable Use Policy) is also available to any user with
+`--model llama3.1_70B`, once you record a one-time license acknowledgment (Llama 3.1
+is free to run for research on university hardware). A Qwen2.5-0.5B-Instruct
+checkpoint (Apache-2.0) is staged for smoke tests only and is not offered for user
+sessions.
+
+Coming as H200 hardware and multi-node serving come online: **Qwen3.5-122B-A10B**
+(FP8, on one H200 node) and the **GLM-5.1 / GLM-5.2** models will become available.
+They are being staged now; GLM-5.2 in particular needs multi-node serving that is
+not yet in place, so these are on the roadmap rather than servable today.
+
 Guidance on choosing between the served models is on the
 [coding overview](coding/overview.md) page. The license obligations that apply when
 you serve these models to other people — attribution for the Qwen 72B model, the

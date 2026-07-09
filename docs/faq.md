@@ -68,8 +68,9 @@ the session, so coordinate within the group on who runs it.
 
 Use Qwen2.5-Coder-32B for code, the Qwen2.5-72B general model for mixed prose-and-code work
 or when you specifically want the largest general model, and Qwen3-4B for quick or
-low-cost tasks. Once they are staged, a reasoning model suits math and multi-step planning,
-and a vision model handles images.
+low-cost tasks. For math and multi-step planning, the Qwen3 thinking models reason
+before answering — Qwen3-32B (`--model qwen3_32B`) on two A100s, or the small Qwen3-4B.
+A vision model (for images) is still on the roadmap.
 
 Whichever you end up on, start small and scale up: get your prompts or agent setup working
 against the small model first — it loads faster, spends less time waiting for free GPUs, and

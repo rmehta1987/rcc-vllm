@@ -132,6 +132,14 @@ not the single-stream speed one interactive user perceives. Session start comman
 and model choice are covered in [Coding Sessions](coding/overview.md) and
 [Getting Started](getting-started.md).
 
+Models without a measured record — `qwen3_32B` today, and the roadmap models
+(`qwen3.5_122B`, GLM-5.1 / GLM-5.2) when they arrive — are billed on the
+reservation floor alone (`w_gpu × N × hours`), with no token term. The floor is the
+authoritative, dominant charge for interactive sessions in any case; a measured
+token rate is added later if a model is benchmarked. A rate record is only used
+when it matches the running engine version, so a version change also drops a
+session to floor-only until the record is refreshed.
+
 A model-and-GPU configuration with no record bills the floor only; the token term
 is reported as UNRATED in the billing summary.
 

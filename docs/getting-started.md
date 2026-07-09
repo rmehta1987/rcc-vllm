@@ -93,7 +93,7 @@ Options and their defaults:
 | `--account NAME` | none — required once | Your Slurm account. Required on the first run, then remembered in `~/.ai-session/config`. |
 | `--partition NAME` | none — required once | The GPU partition to run in. Required on the first run, then remembered. |
 | `--time HH:MM:SS` | `02:00:00` | Session time limit. The session ends after this even if you forget `ai-session stop`, which caps the maximum floor charge. |
-| `--model KEY` | preset's model | Serve a different registered model; the right GPU configuration is chosen for you. |
+| `--model KEY` | preset's model | Serve a different registered model (e.g. `qwen3_32B`, a thinking model, or `llama3.1_70B`); the right GPU configuration is chosen for you. See [Command Reference](reference.md#models). |
 | `--lora NAME=PATH` | none | Also serve your own fine-tuned adapter; see [Your Own Fine-Tuned Model](lora.md). Repeatable. |
 
 The presets:

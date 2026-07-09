@@ -28,16 +28,24 @@ MODEL_REGISTRY = {
     "qwen2.5_72B": f"{MODELS_ROOT}/Qwen2.5-72B-Instruct",   # Phase-1 production model (general chat)
     "qwen2.5_coder_32B": f"{MODELS_ROOT}/Qwen2.5-Coder-32B-Instruct",  # coding model (TP=2 footprint)
     "qwen3_4b": f"{MODELS_ROOT}/Qwen3-4B",                  # single-GPU benchmark anchor
+    "qwen3_32B": f"{MODELS_ROOT}/Qwen3-32B",               # thinking model (BF16, TP=2 A100)
+    "qwen3.5_122B": f"{MODELS_ROOT}/Qwen3.5-122B-A10B-FP8", # MoE, native FP8 -- needs H200 (TP=4)
     "llama3.1_70B": f"{MODELS_ROOT}/Meta-Llama-3.1-70B-Instruct",  # served, behind a license ack
     "qwen2.5_0.5B": f"{MODELS_ROOT}/Qwen2.5-0.5B-Instruct", # smoke test only -- never a billing ref
 }
 
 # The models served to users (others are for benchmarking / smoke). ai_session.py
 # rejects start requests for keys outside this set. qwen2.5_coder_32B is the coding-
-# client default (code-specialized, half the GPUs of 72B). llama3.1_70B is served to
-# any user but gated behind a one-time license acknowledgment (see _LICENSE_GATED in
-# ai_session.py); its floor bills on GPU tier like every other model.
-PHASE1_SERVED = {"qwen2.5_72B", "qwen2.5_coder_32B", "qwen3_4b", "llama3.1_70B"}
+# client default (code-specialized, half the GPUs of 72B). qwen3_32B is a thinking
+# model (Qwen3 family; served with --reasoning-parser qwen3). llama3.1_70B is served
+# to any user but gated behind a one-time license acknowledgment (see _LICENSE_GATED
+# in ai_session.py). Floors bill on GPU tier like every other model.
+#
+# qwen3.5_122B is registered (path + launcher TP=4/H200) but deliberately NOT here
+# yet: it is a native-FP8 MoE that requires H200 (FP8 needs Hopper) and has not been
+# smoke-tested on this cluster. Serve it with `start --force` to test; add it here
+# once a session loads and answers cleanly on H200.
+PHASE1_SERVED = {"qwen2.5_72B", "qwen2.5_coder_32B", "qwen3_4b", "qwen3_32B", "llama3.1_70B"}
 
 KNOWN_TIERS = ("h200", "h100", "l40s", "l40", "a100", "a40", "v100", "rtx6000")
 

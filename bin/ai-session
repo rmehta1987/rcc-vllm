@@ -87,9 +87,19 @@ EOF
 # can still export MODEL/TP/CONSTRAINT directly to bypass this.
 tp_for_model() {
   case "$1" in
-    qwen2.5_72B|llama3.1_70B) echo 4 ;;
-    qwen2.5_coder_32B)        echo 2 ;;
-    qwen3_4b|qwen2.5_0.5B)    echo 1 ;;
+    qwen2.5_72B|llama3.1_70B|qwen3.5_122B) echo 4 ;;
+    qwen2.5_coder_32B|qwen3_32B)           echo 2 ;;
+    qwen3_4b|qwen2.5_0.5B)                 echo 1 ;;
+    *) echo "" ;;
+  esac
+}
+
+# Default GPU tier per model (the presets otherwise default to A100). FP8 models
+# require Hopper (H200) -- A100 (Ampere) has no FP8 tensor cores. Empty => keep the
+# preset's A100 default.
+constraint_for_model() {
+  case "$1" in
+    qwen3.5_122B) echo H200 ;;
     *) echo "" ;;
   esac
 }
@@ -186,6 +196,9 @@ apply_model_opt() {    # export MODEL/TP when --model was given
     if [ -n "$tp" ]; then export TP="$tp"; else
       echo "NOTE: no preset GPU count for '$OPT_MODEL'; set TP=<n> yourself." >&2
     fi
+    # Override the preset's A100 default for models pinned to a tier (e.g. FP8->H200).
+    local c; c=$(constraint_for_model "$OPT_MODEL")
+    [ -n "$c" ] && export CONSTRAINT="$c"
   fi
   [ -n "$OPT_TIME" ] && export TIME="$OPT_TIME"
   return 0

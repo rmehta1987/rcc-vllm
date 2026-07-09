@@ -201,9 +201,7 @@ it is also the small option for `--agent` clients and MCP tools (see
 | `qwen2.5_72B` (H200 option) | 72B | 2 x H200 | 7594 | 2329 | 6.0 SU/h |
 
 Throughput figures are aggregate, measured by the billing benchmark at concurrency
-64 over prefill-heavy, decode-heavy, and balanced request mixes (model-server
-version 0.10.2, bfloat16; 32B measured 2026-06-10; 72B on both GPU types
-measured 2026-06-02).
+64 over prefill-heavy, decode-heavy, and balanced request mixes.
 They are the basis of the per-token charge, not the latency one user perceives
 (next section). The reservation floor is the minimum charge for a session — the
 GPU-type weight times the number of GPUs times the hours held; a session bills the

@@ -47,7 +47,7 @@ The accepted arguments:
 | `--partition NAME` | none — required once | The GPU partition to run in. Required on the first session, then remembered. |
 | `--time HH:MM:SS` | `02:00:00` | Session time limit. The session ends when it expires even if you forget `stop`, capping the maximum floor charge. |
 | `--model KEY` | the preset's model | Serve a different registered model (table below); the GPU configuration is chosen for you. |
-| `--agent` | off | `code` only: enable native tool calling, required by [opencode and Cline](coding/opencode.md), not by aider or Continue. |
+| `--agent` | off | Enable native tool calling: required by [opencode and Cline](coding/opencode.md) (not by aider or Continue), and used on `chat` for the model to call the opt-in [reference tools](getting-started.md#web-search-and-reference-tools-opt-in) itself. |
 | `--lora NAME=PATH` | none | Also serve your own fine-tuned adapter under the name `NAME`; repeatable. Validated before anything is reserved. See [Your Own Fine-Tuned Model](lora.md). |
 
 !!! warning "A running session consumes SU whether or not you send requests"
@@ -85,24 +85,24 @@ directory.
 | `qwen3_32B` | Qwen3-32B | Yes (`--model qwen3_32B`; thinking model, A100 TP=2) | Apache-2.0 |
 | `qwen3.5_122B` | Qwen3.5-122B-A10B (FP8) | Staged; needs H200 (FP8 MoE, TP=4) — smoke test pending | Apache-2.0 |
 | `llama3.1_70B` | Meta-Llama-3.1-70B-Instruct | Yes (`--model llama3.1_70B`, after a one-time license acknowledgment) | Llama 3.1 Community License + Acceptable Use Policy |
-| `qwen2.5_0.5B` | Qwen2.5-0.5B-Instruct | Operators only (smoke tests) | Apache-2.0 |
+| `qwen2.5_0.5B` | Qwen2.5-0.5B-Instruct | RCC staff only (smoke tests) | Apache-2.0 |
 
 The license terms and the obligations that apply when you serve these models to
 other people are set out on [Model licenses](licenses.md). Serving Llama 3.1
 additionally requires a one-time recorded acknowledgment.
 
-On the roadmap, as H200 capacity and multi-node serving come online:
-`qwen3.5_122B` (Qwen3.5-122B-A10B, FP8) moves from staged to served once its H200
-smoke test passes, and the **GLM-5.1** and **GLM-5.2** (FP8) models will be added
-— GLM-5.2 needs multi-node H200 serving that is not yet in place.
+The H200 nodes are already on the cluster and billed like any other tier; the
+pending work is validation and multi-node serving, not hardware. `qwen3.5_122B`
+(Qwen3.5-122B-A10B, FP8) moves from staged to served once its H200 smoke test
+passes; the GLM-5.1 and GLM-5.2 (FP8) models come later — GLM-5.2 needs multi-node
+H200 serving that is not yet built.
 
 ### Rough capability frame of reference
 
-These are **approximate, task-dependent positionings** against closed ("frontier")
-models, drawn from public 2026 leaderboards and third-party comparisons — **not** a
-controlled evaluation on this hardware. Closed models advance continuously and
-capability varies widely by task (coding vs. reasoning vs. general chat), so treat
-this only as a ballpark for picking a model, not a claim of parity.
+These positionings are approximate, drawn from public 2026 leaderboards and
+third-party comparisons rather than from a controlled evaluation on this hardware,
+and capability differs by task — use them to pick a model, not as a claim of
+parity.
 
 | Served / staged model | Rough closed-weight analog | Basis (approximate) |
 |---|---|---|
@@ -110,14 +110,13 @@ this only as a ballpark for picking a model, not a claim of parity.
 | `qwen2.5_coder_32B` | ≈ GPT-4o on coding (2024) | matched GPT-4o on several code benchmarks at release |
 | `qwen3_32B` | o1-mini / GPT-4o-class reasoning | thinking model; multi-step reasoning |
 | `qwen2.5_72B`, `llama3.1_70B` | GPT-4-turbo / GPT-4o-mini (general) | strong 2024 general models, a generation behind 2026 frontier |
-| `qwen3.5_122B` *(staged)* | ≈ Claude Sonnet 4.5 / GPT-5-mini tier | MoE; leads GPT-5-mini on tool-use (BFCL-V4 72.2 vs 55.5); trails Claude Opus |
-| **GLM-5.2** *(roadmap)* | frontier-adjacent to Claude Opus 4.8 | within ~1 pt of Opus 4.8 on FrontierSWE (74.4 vs 75.1), ~4 pts on Terminal-Bench (81 vs 85); ahead of GPT-5.5 on SWE-bench Pro. Opus still leads long-horizon agentic. |
-| **GLM-5.1** *(roadmap)* | prior-gen frontier / GPT-5-mini tier | a clear step below 5.2 (Terminal-Bench 62 vs 81) |
+| `qwen3.5_122B` *(staged)* | ≈ Claude Sonnet 4.5 / GPT-5-mini tier | mixture-of-experts model; scores higher than GPT-5-mini on the BFCL-V4 tool-use benchmark (72.2 vs 55.5), lower than Claude Opus |
+| GLM-5.2 *(roadmap)* | close to Claude Opus 4.8 on coding | within about 1 point of Opus 4.8 on FrontierSWE (74.4 vs 75.1) and 4 points on Terminal-Bench (81 vs 85); above GPT-5.5 on SWE-bench Pro; weaker than Opus on long-horizon agent tasks |
+| GLM-5.1 *(roadmap)* | prior-gen frontier / GPT-5-mini tier | a clear step below 5.2 (Terminal-Bench 62 vs 81) |
 
-The open models trade some frontier capability for running entirely on RCC
-hardware (no data leaves the cluster) at no dollar cost — GLM-5.2, for instance, is
-frontier-adjacent on coding/agentic benchmarks at roughly a sixth the token cost of
-a closed model when self-hosted.
+The trade is capability for locality: the closed models above score higher on most
+tasks, while these run entirely on RCC hardware, so no data leaves the cluster and
+usage is accounted in SU rather than paid per token.
 
 To serve a model you fine-tuned yourself alongside its base model, add
 `--lora NAME=PATH` ; requests whose model is `NAME` are answered
@@ -222,6 +221,6 @@ The advanced launcher (per-flag control of the serving configuration, GPU type
 selection, serving context length, memory utilization, alternative accounts and
 partitions), the raw wrapper scripts and their environment variables, gateway
 internals, the billing benchmark, and rate-table maintenance are documented in
-the operator guide, `ai-session/README.md` in the service repository. The billing
+the staff guide, `ai-session/README.md` in the service repository. The billing
 policy and rate table are editable by RCC staff only. Users never need these; if
-a preset does not fit your case, ask the operators.
+a preset does not fit your case, ask RCC staff.

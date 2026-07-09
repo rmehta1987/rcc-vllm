@@ -96,9 +96,9 @@ Because these duties bind whoever offers the model, ai-session refuses to serve
 
 ### Serving Llama 3.1: the acknowledgment gate
 
-`llama3.1_70B` is served to any user — Llama 3.1 is free to run for research on
-university hardware — but the first attempt to serve it is refused until you
-record that you accept the license. This is a deliberate, non-interactive gate so
+`llama3.1_70B` is served to any user — the Community License permits this use,
+subject to the conditions above — but the first attempt to serve it is refused
+until you record that you accept the license. This is a deliberate, non-interactive gate so
 that scripts can satisfy it once and proceed: the serving command is refused until
 it is run with `ACCEPT_LLAMA_LICENSE=1` set in the environment. The first time:
 
@@ -133,4 +133,4 @@ less "$AISESSION_HOME/models/Meta-Llama-3.1-70B-Instruct/USE_POLICY.md"
 ```
 
 If in doubt about an obligation for your specific use, read the on-disk license, which
-controls, and raise questions about service policy with the ai-session operators.
+controls, and raise questions about service policy with RCC staff.

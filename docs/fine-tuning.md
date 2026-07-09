@@ -209,5 +209,5 @@ serving details — per-client usage, cost, and limits — are on
 
 Training on your own data raises questions this page cannot answer in advance
 (which base to choose, how much data you need, why an adapter underperforms). For
-those, and for whether a packaged training command should exist, contact the
-service operators — see [the FAQ](faq.md#who-runs-this-and-how-do-i-get-help).
+those, and for whether a packaged training command should exist, contact
+RCC staff — see [the FAQ](faq.md#who-runs-this-and-how-do-i-get-help).

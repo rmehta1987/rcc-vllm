@@ -11,8 +11,8 @@ specific client, the [Coding Sessions](coding/overview.md) pages and
 ### Who runs this, and how do I get help?
 
 The service is run by RCC staff. For access requests, problems the
-[Troubleshooting](troubleshooting.md) page does not solve, or requests that need an
-operator (a new model, a larger fine-tuned adapter, a longer time limit), open a
+[Troubleshooting](troubleshooting.md) page does not solve, or requests that need
+RCC staff (a new model, a larger fine-tuned adapter, a longer time limit), open a
 ticket through the standard RCC support channel and mention `ai-session`.
 
 ### How do I get access?
@@ -72,7 +72,8 @@ Use Qwen2.5-Coder-32B for code, the Qwen2.5-72B general model for mixed prose-an
 or when you specifically want the largest general model, and Qwen3-4B for quick or
 low-cost tasks. For math and multi-step planning, the Qwen3 thinking models reason
 before answering — Qwen3-32B (`--model qwen3_32B`) on two A100s, or the small Qwen3-4B.
-A vision model (for images) is still on the roadmap.
+All served models are text-only; if you need a vision model (for images), ask
+RCC staff.
 
 Whichever you end up on, start small and scale up: get your prompts or agent setup working
 against the small model first — it loads faster, spends less time waiting for free GPUs, and
@@ -85,9 +86,10 @@ how these open models compare to closed "frontier" models, see the
 
 Yes, opt-in. Start browser chat with `AISESSION_TOOLS=1 ai-session chat` to add three tools you
 enable per conversation in Open WebUI: web search, URL fetch, and academic reference search
-(arXiv, bioRxiv, medRxiv, PubMed, Semantic Scholar, via the open-source `paper-search-mcp`).
-Web search works with any model; for the model to *autonomously* call the reference tools, start
-a tool-calling model — `AISESSION_TOOLS=1 ai-session chat --model qwen3_32B`. These tools reach
+(arXiv, bioRxiv, medRxiv, PubMed, Semantic Scholar). All three work with any served model,
+orchestrated by the UI. For the model to place the reference-tool calls itself, start a
+tool-calling model with the `--agent` flag —
+`AISESSION_TOOLS=1 ai-session chat --model qwen3_32B --agent`. These tools reach
 outside RCC (see [Is my data private?](#is-my-data-private) and
 [Getting Started](getting-started.md#web-search-and-reference-tools-opt-in)); they are off by
 default.
@@ -148,6 +150,6 @@ project space. Clear old conversations in the chat interface, or remove old file
 ### I forgot to stop my session and was billed for idle time.
 
 An unused session bills its GPUs until its time limit expires. Always run
-`ai-session stop` when you finish. If you routinely forget, ask the operators whether
+`ai-session stop` when you finish. If you routinely forget, ask RCC staff whether
 the idle-session reaper is enabled, which warns and then ends sessions that have gone
 quiet.

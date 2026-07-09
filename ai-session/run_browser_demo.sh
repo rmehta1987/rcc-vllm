@@ -51,6 +51,11 @@ KEYFILE="$AISESSION_STATE_DIR/logs/gateway/session_key"  # per-session gateway a
 MODEL=${MODEL:-qwen3_4b}
 TP=${TP:-1}
 CONSTRAINT=${CONSTRAINT:-A100}
+# Native tool-calling (server-side). `ai-session chat --agent` sets AGENT_CLIENT=1
+# so the model itself can call the opt-in reference tools (AISESSION_TOOLS=1) via
+# Open WebUI's native function calling. Off by default -- the UI-orchestrated web
+# search and URL fetch need no tool-calling at all. Same knob as run_coding_agent.sh.
+AGENT_CLIENT=${AGENT_CLIENT:-0}
 # Session walltime (HH:MM:SS). Caps how long the GPU is held -- and thus the maximum
 # floor charge; the session also ends the moment you run `down`. Flows to the launcher
 # via TIME_LIMIT, which ai_session.py now respects when it is already exported (it no
@@ -62,7 +67,10 @@ export TIME_LIMIT="$TIME"
 # (it reads GW_PORT too -- we export it below so they always agree).
 GW_PORT=${GW_PORT:-$((8400 + UID_NUM % 90))}
 OWUI_PORT=${OWUI_PORT:-$((3000 + UID_NUM % 90))}
-export GW_PORT
+# Default must MATCH run_openwebui.sh (which derives it from its port argument),
+# so `down` can reap a stray mcpo by port even when the pidfile is gone.
+MCPO_PORT=${MCPO_PORT:-$((OWUI_PORT + 500))}
+export GW_PORT MCPO_PORT
 READY_TIMEOUT=${READY_TIMEOUT:-900}
 ACTION=${1:-up}
 
@@ -119,6 +127,21 @@ stop_gateway_supervised() {   # best-effort; no-op if the unit was never used
 
 # --- up --------------------------------------------------------------------- #
 do_up() {
+  # Guard: don't submit a GPU job for a model that isn't fully on disk yet (e.g. a
+  # download still in flight). Resolve the path from the registry and require a
+  # config + weights with no leftover *.incomplete shards. Same guard as
+  # run_coding_agent.sh -- a half-staged model submits, dies on load, and floor-bills.
+  MODEL_DIR=$($PY -c "import sys; sys.path.insert(0,'$HERE'); import server; print(server.model_path('$MODEL'))" 2>/dev/null || true)
+  if [ -z "${MODEL_DIR:-}" ] || [ ! -f "$MODEL_DIR/config.json" ] \
+     || ! ls "$MODEL_DIR"/*.safetensors >/dev/null 2>&1 \
+     || ls "$MODEL_DIR"/*.incomplete >/dev/null 2>&1 \
+     || ls "$MODEL_DIR"/.cache/huggingface/download/*.incomplete >/dev/null 2>&1; then
+    echo "ERROR: model '$MODEL' is not fully staged at: ${MODEL_DIR:-<unknown>}" >&2
+    echo "       (missing config.json/*.safetensors, or a download is still in flight)." >&2
+    echo "       Wait for staging to finish, or pick a staged model, e.g.:" >&2
+    echo "           MODEL=qwen2.5_72B TP=4 bash $HERE/run_browser_demo.sh up" >&2
+    exit 1
+  fi
   if port_busy "$GW_PORT" || port_busy "$OWUI_PORT"; then
     echo "Something is already listening on :$GW_PORT or :$OWUI_PORT (maybe another user on this node)." >&2
     echo "Either '$HERE/run_browser_demo.sh down', or pick free ports:" >&2
@@ -133,16 +156,30 @@ do_up() {
   # token work only adds above the floor.
   echo "==> pre-flight: $($PY "$HERE/preflight_estimate.py" --constraint "$CONSTRAINT" --n "$TP" --time "$TIME")"
 
+  AGENT_FLAG=""
+  if [ "$AGENT_CLIENT" = "1" ]; then AGENT_FLAG="--agent-client"; fi
+
   echo "==> state dir : $AISESSION_STATE_DIR   (user $U)"
-  echo "==> [1/3] starting vLLM session ($MODEL TP=$TP $CONSTRAINT, walltime=$TIME) -- SU-billed; blocks until READY"
+  echo "==> [1/3] starting vLLM session ($MODEL TP=$TP $CONSTRAINT${AGENT_FLAG:+, tool-calling}, walltime=$TIME) -- SU-billed; blocks until READY"
   # pipefail makes the pipeline fail if `start` fails even though tee succeeds.
+  # $AGENT_FLAG is intentionally unquoted so an empty value expands to nothing.
   $PY "$HERE/ai_session.py" start \
-      --model "$MODEL" --tp "$TP" --constraint "$CONSTRAINT" \
+      --model "$MODEL" --tp "$TP" --constraint "$CONSTRAINT" $AGENT_FLAG \
       --wait --ready-timeout "$READY_TIMEOUT" 2>&1 | tee "$RUN_DIR/start.log"
   if ! grep -q '"active": true' "$UPSTREAM" 2>/dev/null; then
     echo "ERROR: session did not publish an active backend ($UPSTREAM); aborting." >&2
     exit 1
   fi
+
+  # From here on OUR GPU session is up and billing (the upstream points at it).
+  # If anything below fails -- the gateway or the UI never comes up -- tear the
+  # whole stack down instead of leaving a half-up stack floor-billing. Installed
+  # only now: earlier, `down` could have ended a PRE-EXISTING session (e.g. when
+  # `start` refuses because one is already running). Cleared before READY prints.
+  trap 'rc=$?; trap - EXIT; if [ "$rc" -ne 0 ]; then
+          echo "==> up failed (rc=$rc) -- tearing the stack down so nothing keeps billing" >&2
+          do_down || true
+        fi' EXIT
 
   # Mint ONE per-session access key. The gateway will REQUIRE it (Bearer/API key)
   # and Open WebUI (started below) reads it from AISESSION_GATEWAY_KEY. Share it
@@ -153,20 +190,26 @@ do_up() {
   chmod 600 "$KEYFILE"
   export AISESSION_GATEWAY_KEY="$KEY"
 
+  # The pidfile is written INCREMENTALLY, each pid recorded as soon as its process
+  # is launched (not after the readiness waits). If a wait fails and `set -e`
+  # aborts this function, the pidfile still exists and lists everything started so
+  # far -- so `ai-session stop` takes THIS stack's teardown branch (which also
+  # reaps mcpo and the UI port) rather than the coding one, and nothing leaks.
+  : > "$PIDFILE"
+
   echo "==> [2/3] starting gateway on 127.0.0.1:$GW_PORT (API-key auth ENABLED)"
-  GW_SUPERVISED=0
   if [ "${GATEWAY_SUPERVISE:-0}" = "1" ] && have_user_systemd; then
-    start_gateway_supervised
+    start_gateway_supervised                # no pid to track; `down` stops the unit
     wait_gateway 60
     echo "    gateway healthy under systemd --user ($GW_UNIT, Restart=on-failure)"
     echo "    logs: journalctl --user -u $GW_UNIT -f"
-    GW_SUPERVISED=1
   else
     [ "${GATEWAY_SUPERVISE:-0}" = "1" ] && \
       echo "    (GATEWAY_SUPERVISE=1 but no user systemd here -- using nohup)" >&2
     nohup "$PY" "$HERE/gateway.py" --host 127.0.0.1 --port "$GW_PORT" \
         > "$RUN_DIR/gateway.log" 2>&1 &
     GW_PID=$!
+    echo "gateway $GW_PID" >> "$PIDFILE"
     wait_gateway 60
     echo "    gateway healthy (pid $GW_PID)  log: $RUN_DIR/gateway.log"
   fi
@@ -177,13 +220,11 @@ do_up() {
   nohup bash "$HERE/run_openwebui.sh" "$OWUI_PORT" \
       > "$RUN_DIR/openwebui.log" 2>&1 &
   OWUI_PID=$!
+  echo "openwebui $OWUI_PID" >> "$PIDFILE"
   wait_port "$OWUI_PORT" 180 "Open WebUI"
   echo "    Open WebUI serving (pid $OWUI_PID)  log: $RUN_DIR/openwebui.log"
 
-  {
-    [ "$GW_SUPERVISED" = "1" ] || echo "gateway $GW_PID"   # supervised -> `down` stops the unit
-    echo "openwebui $OWUI_PID"
-  } > "$PIDFILE"
+  trap - EXIT   # the stack is fully up; failures past here are not up-failures
 
   local login; login=$(hostname -s)
   cat <<EOF
@@ -215,7 +256,7 @@ EOF
 
 # --- down ------------------------------------------------------------------- #
 do_down() {
-  local before after stopped=0 name pid port pids
+  local before after stopped=0 name pid port pids mpid
   # snapshot the newest billing receipt BEFORE end, so we can tell whether THIS
   # run actually billed a session (a new *_summary.json appears) vs. a no-op down.
   before=$(ls -t "$USAGE_DIR"/*_summary.json 2>/dev/null | head -1 || true)
@@ -247,9 +288,9 @@ do_down() {
     fi
     rm -f "$RUN_DIR/mcpo.pid"
   fi
-  # belt-and-suspenders: kill whatever still owns MY ports.
+  # belt-and-suspenders: kill whatever still owns MY ports (mcpo's included).
   # NB: by PORT OWNER via ss -- never `pkill -f`, whose pattern self-matches this shell.
-  for port in "$GW_PORT" "$OWUI_PORT"; do
+  for port in "$GW_PORT" "$OWUI_PORT" "$MCPO_PORT"; do
     pids=$(ss -ltnp 2>/dev/null | grep ":$port " | grep -oP 'pid=\K[0-9]+' | sort -u || true)
     for pid in $pids; do
       if kill "$pid" 2>/dev/null; then echo "    stopped :$port owner (pid $pid)"; stopped=1; fi

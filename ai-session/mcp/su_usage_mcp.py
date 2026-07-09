@@ -20,7 +20,8 @@ once, keyed by job id):
      Search dirs (first existing wins per location, all locations merged):
        $AISESSION_USAGE_DIR                              (explicit override)
        $AISESSION_STATE_DIR/logs/usage                  (multi-tenant layout)
-       /project/rcc/mehta5/ai-session-state/<user>/logs/usage
+       $HOME/.ai-session/state/logs/usage               (the wrappers' default)
+       /project/rcc/mehta5/ai-session-state/<user>/logs/usage   (legacy layout)
        <repo>/ai-session/logs/usage                     (single-tenant default)
   2. Central ledger:  /project/rcc/mehta5/ai-session-billing/*_end.json
      (group rcc-staff; a normal user usually cannot read it -- PermissionError is
@@ -79,6 +80,9 @@ def _usage_dirs():
     if os.environ.get("AISESSION_STATE_DIR"):
         cands.append(os.path.join(os.environ["AISESSION_STATE_DIR"],
                                   "logs", "usage"))
+    # The wrappers' default state dir ($HOME/.ai-session/state), so a server
+    # launched WITHOUT AISESSION_STATE_DIR still finds the receipts.
+    cands.append(os.path.expanduser("~/.ai-session/state/logs/usage"))
     cands.append("/project/rcc/mehta5/ai-session-state/%s/logs/usage" % me)
     cands.append(_REPO_USAGE)
     seen, out = set(), []

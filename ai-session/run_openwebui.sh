@@ -66,16 +66,37 @@ if [ "${AISESSION_TOOLS:-0}" = "1" ]; then
   export ENABLE_WEB_LOADER=True
 
   TOOLS_ENV=/project/rcc/mehta5/tools-env
-  RUN_DIR="${AISESSION_STATE_DIR:-$HERE}/run"
+  # Writable run dir for mcpo's pidfile+log. Standalone default matches the other
+  # state paths above (the install dir is shared read-only, so never fall back there).
+  RUN_DIR="${AISESSION_STATE_DIR:-$HOME/.ai-session/state}/run"
+  mkdir -p "$RUN_DIR"
   MCPO_PORT=${MCPO_PORT:-$((PORT + 500))}
-  if [ -x "$TOOLS_ENV/bin/mcpo" ]; then
+  if [ ! -x "$TOOLS_ENV/bin/mcpo" ]; then
+    echo "[openwebui] AISESSION_TOOLS=1 but $TOOLS_ENV/bin/mcpo missing; web-search + URL-fetch on, paper-search OFF" >&2
+  elif ss -ltn 2>/dev/null | grep -q ":$MCPO_PORT "; then
+    # Never point the UI at a listener we did not start -- on a shared login node
+    # it could be another user's process. Skip paper-search rather than guess.
+    echo "[openwebui] :$MCPO_PORT is already in use (another user?); paper-search OFF." >&2
+    echo "[openwebui] Pick a free port and restart: MCPO_PORT=<port> ... (web-search + URL-fetch stay on)" >&2
+  else
     "$TOOLS_ENV/bin/mcpo" --host 127.0.0.1 --port "$MCPO_PORT" -- "$TOOLS_ENV/bin/paper-search-mcp" \
       > "$RUN_DIR/mcpo.log" 2>&1 &
-    echo $! > "$RUN_DIR/mcpo.pid"   # so `ai-session stop` / run_browser_demo.sh down can reap it
-    export TOOL_SERVER_CONNECTIONS='[{"url":"http://127.0.0.1:'"$MCPO_PORT"'","path":"openapi.json","auth_type":"none","config":{"enable":true},"info":{"id":"paper-search","name":"Academic paper search (arXiv/bioRxiv/PubMed/Semantic Scholar)"}}]'
-    echo "[openwebui] tools ON: web-search=$WEB_SEARCH_ENGINE, URL-fetch, paper-search (mcpo 127.0.0.1:$MCPO_PORT)" >&2
-  else
-    echo "[openwebui] AISESSION_TOOLS=1 but $TOOLS_ENV/bin/mcpo missing; web-search + URL-fetch on, paper-search OFF" >&2
+    MCPO_PID=$!
+    echo "$MCPO_PID" > "$RUN_DIR/mcpo.pid"   # so `ai-session stop` / run_browser_demo.sh down can reap it
+    # Liveness check: only hand the UI a tool server that actually came up.
+    i=0
+    while ! ss -ltn 2>/dev/null | grep -q ":$MCPO_PORT "; do
+      if ! kill -0 "$MCPO_PID" 2>/dev/null || [ "$i" -ge 30 ]; then break; fi
+      sleep 1; i=$((i+1))
+    done
+    if ss -ltn 2>/dev/null | grep -q ":$MCPO_PORT "; then
+      export TOOL_SERVER_CONNECTIONS='[{"url":"http://127.0.0.1:'"$MCPO_PORT"'","path":"openapi.json","auth_type":"none","config":{"enable":true},"info":{"id":"paper-search","name":"Academic paper search (arXiv/bioRxiv/PubMed/Semantic Scholar)"}}]'
+      echo "[openwebui] tools ON: web-search=$WEB_SEARCH_ENGINE, URL-fetch, paper-search (mcpo 127.0.0.1:$MCPO_PORT, pid $MCPO_PID)" >&2
+    else
+      kill "$MCPO_PID" 2>/dev/null || true
+      rm -f "$RUN_DIR/mcpo.pid"
+      echo "[openwebui] mcpo never bound :$MCPO_PORT (see $RUN_DIR/mcpo.log); paper-search OFF." >&2
+    fi
   fi
   echo "[openwebui] NOTE: web/reference tools reach EXTERNAL services -- query terms leave RCC for those requests." >&2
 fi

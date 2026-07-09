@@ -134,7 +134,7 @@ Older Continue versions read a JSON file instead:
   and `<SESSION_KEY>` already substituted, ready to paste.
 - `allowAnonymousTelemetry: false` turns off Continue's own usage telemetry. This is
   a client-side setting independent of the model traffic, which never leaves RCC; the
-  [data residency note on the home page](../index.md#data-location) explains the
+  [Data location note on the home page](../index.md#data-location) explains the
   distinction.
 - `apiBase` must include the `/v1` suffix.
 - `<SESSION_KEY>` is the session access key minted at start. Every request must

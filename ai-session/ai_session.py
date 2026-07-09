@@ -518,7 +518,10 @@ def cmd_connect(args) -> int:
     state, node = _squeue_row(session["jobid"])
     node = node or session.get("node")
     port = session["port"]
-    gw_host = args.gateway_host or os.uname().nodename
+    # Short node name for display; the tunnel line appends the external DNS suffix
+    # so it matches the single-hop form every doc example uses (uname gives a bare
+    # or internal name, which is not what a laptop can ssh to).
+    gw_host = (args.gateway_host or os.uname().nodename).split(".")[0]
     # Default port must MATCH the wrappers' UID-derived scheme (8400 + uid % 90),
     # else `connect` prints a URL no gateway is listening on. Precedence:
     # explicit --gateway-port > exported GW_PORT > the derived per-user default.
@@ -555,8 +558,9 @@ def cmd_connect(args) -> int:
     print("\n--- RECOMMENDED: go through the gateway (stable URL across sessions) ---")
     print(f"1) Make sure the gateway is running on {gw_host}:")
     print(f"     python {os.path.join(_HERE, 'gateway.py')} --port {gw_port}")
-    print("2) If your client runs on your LAPTOP, open one stable tunnel (leave it running):")
-    print(f"     ssh -N -L {gw_port}:localhost:{gw_port} {os.environ.get('USER','you')}@{gw_host}")
+    print("2) If your client runs on your LAPTOP, open the tunnel (one login, -f backgrounds it):")
+    print(f"     ssh -N -f -L {gw_port}:localhost:{gw_port} "
+          f"{os.environ.get('USER', 'you')}@{gw_host}.rcc.uchicago.edu")
     print("   (on a cluster login node you can skip the tunnel and use the on-cluster URL)")
     print("\nClient connection settings:")
     print(f"   base_url (laptop, via tunnel) : {gw_url_tunnel}")

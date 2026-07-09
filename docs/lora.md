@@ -91,5 +91,5 @@ per-request overhead but no additional charge.
 | Path | absolute, on project/scratch storage, no spaces |
 
 If your adapter exceeds these limits (a higher rank, a full fine-tune, a
-different base model), contact the service operators — see
+different base model), contact RCC staff — see
 [the FAQ](faq.md#who-runs-this-and-how-do-i-get-help).

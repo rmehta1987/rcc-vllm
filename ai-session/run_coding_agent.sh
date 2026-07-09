@@ -43,7 +43,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"          # .../ai-session  
 PY=/project/rcc/mehta5/conda-envs/vllm-probe/bin/python       # shared vllm-probe env (no activation dance)
 AIDER_ENV=/project/rcc/mehta5/aider-env                       # aider's OWN venv (NOT vllm-probe)
 AIDER_BIN="$AIDER_ENV/bin/aider"
-METADATA="$HERE/aider_model_metadata.json"                    # tells litellm the 8192 context (no warning)
+METADATA="$HERE/aider_model_metadata.json"                    # tells litellm the 32K coding context (no warning)
 U=$(whoami)
 UID_NUM=$(id -u)
 

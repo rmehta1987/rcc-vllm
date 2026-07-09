@@ -23,7 +23,7 @@ w_gpu:
   h200: 3.0      # NCSA Delta exact; price-basis 4.75, TFLOPS 3.17
   h100: 2.0      # PSC + Lonestar SU convention (TFLOPS/price say 3.2-4.0)
   l40s: 1.0      # TFLOPS 1.16 / price 1.13; Ada, bf16-capable
-  a100: 1.0      # reference anchor (A100-40GB)
+  a100: 1.0      # reference anchor; one tier for 40GB and 80GB cards
   a40:  0.5      # Delta "discounted"; TFLOPS 0.48 / price 0.50
 
 # Tiers excluded from Phase 1 because they are fp16-only (no bf16): some Qwen

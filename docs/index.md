@@ -3,10 +3,10 @@
 ai-session is a local large-language-model service on the University of Chicago Research
 Computing Cluster (RCC). Instead of sending data to a commercial provider,
 faculty and students run open LLM models on the GPUs the university already has.
-Running the models here has three practical advantages over a cloud AI service:
-your prompts, code, and data never leave the university's systems, which matters
-for unpublished results; the usage is accounted internally in Service Units (SU); and the
-served models are open-weights checkpoints you can publish for reproducible research and provenance. 
+Compared with a cloud AI service: your prompts, code, and data never leave the
+university's systems, which matters for unpublished results; usage is accounted
+internally in Service Units (SU); and the served models are open-weights
+checkpoints, so the exact model behind a result can be named and served again. 
 You start a session, which serves a model on cluster GPUs, which is reached via ssh-tunnel. For chatting with the LLM you have two ways:
 browser chat with Open WebUI ([Getting Started](getting-started.md)) or command-line/in-editor coding tools ([Coding Sessions](coding/overview.md)).
 
@@ -59,7 +59,10 @@ node. The client reaches it over `localhost` or an SSH-forwarded port.
 Along this serving path — client to gateway to model server — no prompt, file
 content, or completion is transmitted to any service outside RCC. This is the main
 difference from hosted assistants and is the reason the service is
-appropriate for unpublished or otherwise restricted code and data.
+appropriate for unpublished or otherwise restricted code and data. The one
+exception is opt-in: starting browser chat with `AISESSION_TOOLS=1` adds web and
+reference tools whose query terms do leave RCC; see
+[Getting Started](getting-started.md#web-search-and-reference-tools-opt-in).
 
 !!! note "Coding-tool monitor with external servers is a separate concern you control in your client"
     The statement above covers the serving path — the model traffic itself. The
@@ -89,21 +92,24 @@ A good practice is to start small and scale up: prototype your prompts,
 scripts, or agent setup against `ai-session fast` — the small model loads
 quickest, waits least for free GPUs, and has the lowest floor cost (1.0 SU per
 hour) — and move to the coder or 72B model once the workflow works. The larger
-models answer better; they do not need different client configuration.
+models are more capable, and switching requires no change to the client
+configuration.
 
 A Qwen3-32B checkpoint (Apache-2.0) is also available with `--model qwen3_32B`: a
 thinking model whose chain of thought is returned separately from the answer,
 served on two A100s. A Meta-Llama-3.1-70B-Instruct checkpoint (Llama 3.1 Community
 License plus an Acceptable Use Policy) is also available to any user with
-`--model llama3.1_70B`, once you record a one-time license acknowledgment (Llama 3.1
-is free to run for research on university hardware). A Qwen2.5-0.5B-Instruct
+`--model llama3.1_70B`, once you record a one-time license acknowledgment (the
+Llama 3.1 Community License permits this use, with conditions; see
+[Model licenses](licenses.md)). A Qwen2.5-0.5B-Instruct
 checkpoint (Apache-2.0) is staged for smoke tests only and is not offered for user
 sessions.
 
-Coming as H200 hardware and multi-node serving come online: **Qwen3.5-122B-A10B**
-(FP8, on one H200 node) and the **GLM-5.1 / GLM-5.2** models will become available.
-They are being staged now; GLM-5.2 in particular needs multi-node serving that is
-not yet in place, so these are on the roadmap rather than servable today.
+Larger models are staged but not yet servable. Qwen3.5-122B-A10B (FP8) is
+registered and its weights are on disk; it becomes available once it passes
+validation on the cluster's H200 nodes. The GLM-5.1 and GLM-5.2 models need
+multi-node H200 serving that is not yet built. The H200 hardware itself is
+already on the cluster; what is pending is the serving work, not the machines.
 
 Guidance on choosing between the served models is on the
 [coding overview](coding/overview.md) page, and a rough capability frame of
@@ -148,10 +154,8 @@ their resolutions.
 
 ## Getting help
 
-Two distinct support channels apply, depending on the question:
-
-- Questions about the service itself — sessions, models, connection problems
-  beyond the [troubleshooting page](troubleshooting.md), and billing — go to the
-  ai-session operators: the RCC staff who maintain the service.
-- Questions about the cluster — accounts, SSH access, and RCC allocations — go
-  to the RCC help desk through the standard RCC support channel.
+Open a ticket through the standard RCC support channel. Mention `ai-session` if
+the question is about the service itself — sessions, models, connection problems
+beyond the [troubleshooting page](troubleshooting.md), or billing — so it reaches
+the staff who maintain it. Questions about the cluster in general — accounts,
+SSH access, RCC allocations — follow the normal help-desk path.

@@ -152,7 +152,7 @@ store. The service refuses to reserve GPUs for a model whose directory lacks
 `config.json` or `*.safetensors` files, or still contains `*.incomplete` shards
 from an in-flight download.
 
-**Fix.** Wait for staging to finish (the operators stage new models) and start
+**Fix.** Wait for staging to finish (RCC staff stage new models) and start
 again, or start a model that is already staged, for example:
 
 ```bash

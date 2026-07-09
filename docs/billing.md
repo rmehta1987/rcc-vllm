@@ -28,7 +28,7 @@ attached to them in Phase 1 (`dollar_per_su: null` in the policy file).
 
 `w_gpu` is a cost multiplier, not a performance index. Because 1 A100-GPU-hour is
 1 SU, the A100 anchors at 1.0, and `w_gpu(H200) = 3.0` means one H200-GPU-hour costs
-3 SU. The values below are what the service charges today; the operators can
+3 SU. The values below are what the service charges today; RCC staff can
 adjust them in the policy file.
 
 | GPU type  | w_gpu | Basis |
@@ -36,8 +36,13 @@ adjust them in the policy file.
 | H200      | 3.0   | NCSA Delta exact; price ratio 4.75, dense-BF16 TFLOPS ratio 3.17 |
 | H100      | 2.0   | PSC Bridges-2 and TACC Lonestar6 SU convention (TFLOPS and price ratios say 3.2-4.0; the HPC-SU value is used) |
 | L40S      | 1.0   | TFLOPS ratio 1.16, price ratio 1.13; Ada generation, bf16-capable |
-| A100-40GB | 1.0   | Reference anchor |
+| A100      | 1.0   | Reference anchor; one tier for both memory sizes |
 | A40       | 0.5   | NCSA Delta discounted tier; TFLOPS ratio 0.48, price ratio 0.50 |
+
+The A100 tier is not split by memory size: the 40 GB and 80 GB cards both bill
+1.0. The A100 sessions this service starts run on 80 GB nodes; the `qwen3_4b`
+rate record was measured on a 40 GB PCIe card (see the provenance below), and
+both normalize to the same `a100` tier.
 
 The table is synthesized from the peer conventions at NCSA Delta, PSC Bridges-2,
 TACC Lonestar6, Harvard FASRC, Caltech, and MSI, cross-checked against dense-BF16
@@ -229,4 +234,4 @@ reconstructs the reservation-floor charge directly from the cluster scheduler's
 own accounting records. The sweep is the authoritative floor because those
 elapsed-time records cannot be edited by users, so a charge is recorded even for a
 session that was never ended cleanly. Running the sweep and the ledger layout are
-described in the operator guide.
+described in the staff guide (`ai-session/README.md`).

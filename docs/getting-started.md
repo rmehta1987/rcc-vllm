@@ -94,6 +94,7 @@ Options and their defaults:
 | `--partition NAME` | none — required once | The GPU partition to run in. Required on the first run, then remembered. |
 | `--time HH:MM:SS` | `02:00:00` | Session time limit. The session ends after this even if you forget `ai-session stop`, which caps the maximum floor charge. |
 | `--model KEY` | preset's model | Serve a different registered model (e.g. `qwen3_32B`, a thinking model, or `llama3.1_70B`); the right GPU configuration is chosen for you. See [Command Reference](reference.md#models). |
+| `--agent` | off | Enable native tool calling, so a tool-calling model can call the opt-in [reference tools](#web-search-and-reference-tools-opt-in) itself. Not needed for web search or URL fetch. |
 | `--lora NAME=PATH` | none | Also serve your own fine-tuned adapter; see [Your Own Fine-Tuned Model](lora.md). Repeatable. |
 
 The presets:
@@ -109,7 +110,7 @@ and model filled in). If it does not, see [Troubleshooting](troubleshooting.md).
 ```
 ================ READY -- chat in your browser ================
 
-  SESSION ACCESS KEY:  <64-hex-character key>
+  SESSION ACCESS KEY:  <32-hex-character key>
 
   The gateway now REQUIRES this key. The Open WebUI started here already uses it,
   so YOUR browser tab works out of the box. ...
@@ -283,23 +284,24 @@ AISESSION_TOOLS=1 ai-session chat
 
 This enables, as per-chat toggles inside Open WebUI:
 
-1. **Web search** — turn on the search toggle (globe icon) in a message; Open WebUI
-   runs the search on the login node, fetches the top results, and feeds them to the
-   model. This is orchestrated by the UI, so it works with **any** model, including
-   the 72B `chat` preset (no tool-calling model required). The default engine is
-   keyless DuckDuckGo; override `WEB_SEARCH_ENGINE` (e.g. `searxng`, `tavily`) and its
-   key/URL for another provider.
-2. **URL fetch** — paste a link in a message and the page is loaded and summarized.
-3. **Reference search** — an academic tool server (arXiv, bioRxiv, medRxiv, PubMed,
-   Semantic Scholar, and more, via the open-source `paper-search-mcp` behind `mcpo`)
-   appears under the message **Tools** menu. For the model to call it **autonomously**
-   you need a tool-calling model — start a Qwen3 session, `AISESSION_TOOLS=1
-   ai-session chat --model qwen3_32B` — since the `chat` 72B preset does not emit
-   tool calls reliably.
+1. Web search — turn on the search toggle (globe icon) in a message; Open WebUI
+   runs the search on the login node, fetches the top results, and feeds them to
+   the model. The UI orchestrates this itself, so it works with any model,
+   including the 72B `chat` preset. The default engine is keyless DuckDuckGo;
+   override `WEB_SEARCH_ENGINE` (e.g. `searxng`, `tavily`) and its key/URL for
+   another provider.
+2. URL fetch — paste a link in a message and the page is loaded and summarized.
+   This also works with any model.
+3. Reference search — an academic paper search (arXiv, bioRxiv, medRxiv, PubMed,
+   Semantic Scholar) appears under the message Tools menu. Open WebUI can drive
+   it with any model. For the model to place the tool calls itself, start the
+   session with a tool-calling model and the `--agent` flag —
+   `AISESSION_TOOLS=1 ai-session chat --model qwen3_32B --agent` — since the
+   72B `chat` preset does not emit tool calls reliably.
 
-!!! warning "This changes data residency — it is why the tools are off by default"
-    Web search, URL fetch, and reference lookups send your **query terms** (and, for
-    URL fetch, the requested address) to services **outside RCC** — the search engine,
+!!! warning "These tools send data outside RCC — it is why they are off by default"
+    Web search, URL fetch, and reference lookups send your query terms (and, for
+    URL fetch, the requested address) to services outside RCC — the search engine,
     the fetched site, or the scholarly APIs. The model itself still runs on-cluster and
     your prompts are not sent wholesale, but these specific tool requests leave RCC. Use
     them only for non-sensitive queries. Self-hosting SearXNG (`WEB_SEARCH_ENGINE=searxng`)

@@ -4,11 +4,12 @@ opencode and Cline are autonomous coding agents. They differ from [aider](aider.
 in how they drive the model: instead of asking for edits as plain text, they use
 native function calling (tool calling), where the model returns a
 structured call — a function name plus JSON arguments — that the agent then executes
-(read a file, apply an edit, run a command (grep), run a tool (squeue)). opencode is a supported client,
-and it requires the two workaround files
-described in Step 2, and occasional retries are needed even with them. aider remains
+(read a file, apply an edit, run a command (grep), run a tool (squeue)). opencode is a supported client;
+it needs the two files described in Step 2 — a provider configuration
+(`opencode.json`) and a workaround rules file (`AGENTS.md`) — and occasional
+retries even with them. aider remains
 the default and recommended client: it performs the same edits through the
-chat-completions API without function calling and needs no workarounds.
+chat-completions API without function calling and needs no workaround.
 
 Because these agents need function calling, the session must be started with tool
 calling enabled (`ai-session code --agent`); a session started for aider or
@@ -237,7 +238,7 @@ opencode run --thinking --model rcc/qwen3_4b "…"   # prints a "Thinking: …" 
 ```
 
 The interactive TUI shows the thinking block inline above each reply. Only the
-Qwen3 models reason this way (`qwen3_4b` today; a larger Qwen3 is being staged);
+Qwen3 models reason this way (`qwen3_4b` and the larger `qwen3_32B`, both served);
 the default `qwen2.5_coder_32B` and the Qwen2.5/Llama models do not think, so
 `--thinking` has no effect with them. aider, by contrast, does not surface
 `reasoning_content` against this endpoint — it shows only the answer.

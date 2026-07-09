@@ -3,9 +3,9 @@
 A coding session serves a code-specialized language model on an RCC GPU node and
 connects it to a coding tool that reads and edits source code in your git
 repository. No prompt, file content, or completion leaves the cluster. The
-command-line tools (aider, opencode) are a natural fit for cluster work: they run
-in the terminal where your code already lives, over SSH, with no graphical
-display needed and no copy of the repository on your laptop. The cost is
+command-line tools (aider, opencode) run in the terminal where your code already
+lives, over SSH, with no graphical display needed and no copy of the repository
+on your laptop. The cost is
 GPU reservation time, charged in Service Units (SU); 1 SU is 1 A100-GPU-hour (see
 [Billing and Service Units](../billing.md)).
 
@@ -157,7 +157,7 @@ tunnel to your `GW_PORT`, and set the key as the API key in their client. All of
 their usage bills to you, the starter — one key per session, no per-person split. A
 request without the key is refused with HTTP 401. `ai-session stop` deletes the key
 file, so the key stops working when the session ends and the next start mints a
-fresh one. Only a gateway an operator starts by hand with no key configured is
+fresh one. Only a gateway RCC staff start by hand with no key configured is
 keyless, in which case any non-empty string works.
 
 ## Remote access from your laptop
@@ -175,9 +175,12 @@ ssh -N -L <GW_PORT>:localhost:<GW_PORT> <cnetid>@<login-node>.rcc.uchicago.edu
 - Replace `<login-node>` with the login node named in the start output; the
   tunnel must target that node, not an arbitrary one.
 
-`ai-session code` prints a ready-made tunnel command with the node filled in; that
-form routes through a jump host (`-J <cnetid>@midway3.rcc.uchicago.edu`) and is
-equivalent. The client on your laptop then uses `http://localhost:<GW_PORT>/v1` as
+`ai-session code` prints a ready-made tunnel command with the node filled in — the
+same single-connection form, with `-f` added so the tunnel backgrounds itself once
+connected. Only if your network cannot reach the named login node directly, jump
+through the round-robin alias as a fallback (this authenticates twice):
+`ssh -N -L <GW_PORT>:localhost:<GW_PORT> -J <cnetid>@midway3.rcc.uchicago.edu <cnetid>@<login-node>`.
+The client on your laptop then uses `http://localhost:<GW_PORT>/v1` as
 its base URL. When the client runs on a login node, no tunnel is needed; use the
 same `localhost` URL directly. For what an SSH tunnel is and how to debug one, see
 [Getting Started](../getting-started.md).
@@ -217,8 +220,8 @@ The coder model is the default because it is specialized for code, uses half the
 GPUs of the 72B, and has a lower measured per-token cost than the 72B at every
 benchmarked configuration. The 72B is preferable for mixed code-and-prose work or
 when the larger general model is specifically wanted. The H200 configuration
-(faster, higher floor) and other advanced serving overrides are operator
-territory; ask the operators, or see the operator guide in the repository.
+(faster, higher floor) and other advanced serving overrides are handled by
+RCC staff; ask them, or see the staff guide in the repository.
 
 !!! warning "Each of these starts a billed GPU reservation"
     The floors above apply from the moment the session starts. Stop with

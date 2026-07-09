@@ -2,7 +2,7 @@
 # ai-session -- the user-facing command for the RCC ai-session service.
 #
 # Users load this via `module load ai-session` and never see the install path.
-# Each verb wraps one of the existing operator scripts under $AISESSION_HOME:
+# Each verb wraps one of the existing wrapper scripts under $AISESSION_HOME:
 #
 #   ai-session chat      start a chat session (browser UI) with the general model
 #   ai-session code      start a coding session for aider / opencode / Continue
@@ -16,7 +16,7 @@
 # chat/code/fast SUBMIT A GPU JOB and start the billing clock; everything else
 # is read-only. Presets map an intent name to a full serve config (model,
 # GPU count, GPU type) so users never set tensor-parallel or constraints;
-# operators can still override via MODEL/TP/CONSTRAINT/TIME/GW_PORT env vars,
+# RCC staff can still override via MODEL/TP/CONSTRAINT/TIME/GW_PORT env vars,
 # which pass straight through to the underlying wrappers.
 set -euo pipefail
 
@@ -56,8 +56,9 @@ Start a session (holds GPUs; billing runs until you stop it):
                                 time; then remembered)
               --time HH:MM:SS   session time limit (default 02:00:00)
               --model KEY       serve a specific model instead of the preset
-              --agent           (code) enable native tool-calling for agent
-                                clients such as opencode
+              --agent           enable native tool-calling: agent clients such
+                                as opencode (code), or letting the model call
+                                the browser reference tools itself (chat)
               --lora NAME=PATH  also serve your fine-tuned adapter (LoRA);
                                 repeatable. Requests that set model=NAME get
                                 the adapter; model=<base key> gets the base.
@@ -83,7 +84,7 @@ EOF
 }
 
 # --- preset -> serve config ---------------------------------------------------
-# TP (GPU count) per model; single source of truth for the presets. Operators
+# TP (GPU count) per model; single source of truth for the presets. RCC staff
 # can still export MODEL/TP/CONSTRAINT directly to bypass this.
 tp_for_model() {
   case "$1" in
@@ -252,6 +253,10 @@ PYEOF
 do_chat() {
   VERB=chat; parse_start_opts "$@"
   resolve_account_partition
+  # --agent works on chat/fast too: the browser tools (paper search) can then be
+  # called by the model itself, not only via the UI's own orchestration. The
+  # wrapper turns AGENT_CLIENT=1 into ai_session.py's --agent-client flag.
+  [ "$OPT_AGENT" = "1" ] && export AGENT_CLIENT=1
   export MODEL=${MODEL:-qwen2.5_72B} TP=${TP:-4} CONSTRAINT=${CONSTRAINT:-A100}
   apply_model_opt
   apply_lora_opt
@@ -263,6 +268,7 @@ do_chat() {
 do_fast() {
   VERB=fast; parse_start_opts "$@"
   resolve_account_partition
+  [ "$OPT_AGENT" = "1" ] && export AGENT_CLIENT=1   # same as do_chat
   export MODEL=${MODEL:-qwen3_4b} TP=${TP:-1} CONSTRAINT=${CONSTRAINT:-A100}
   apply_model_opt
   apply_lora_opt

@@ -1,5 +1,69 @@
 # Changelog
 
+## 2026-07-09 — consistency-audit fixes (four-way adversarial review)
+
+### Correctness (Tier 1)
+
+- `--agent` now works on `chat` and `fast`, not only `code`: `bin/ai-session`
+  exports `AGENT_CLIENT=1` and `run_browser_demo.sh` passes `--agent-client`
+  through to `ai_session.py start`. This makes the documented autonomous
+  reference-tool use in browser chat real; the tools docs (`getting-started.md`,
+  `faq.md`, `reference.md`) now state which tools are UI-orchestrated (web
+  search, URL fetch — any model) and which need `--agent` plus a tool-calling
+  model (the model placing reference-tool calls itself).
+- mcpo lifecycle hardening: `run_browser_demo.sh` writes its pidfile
+  incrementally (a UI that never binds no longer leaves `stop` on the wrong
+  teardown branch), adds `MCPO_PORT` to the `down` port-owner backstop, and
+  tears the whole stack down if `up` fails after the GPU session is active
+  (trap installed only once OUR session is confirmed, so a refused `start`
+  can never end a pre-existing session). `run_openwebui.sh` uses a writable
+  standalone `RUN_DIR` (`~/.ai-session/state/run`, mkdir'ed), refuses to point
+  the UI at a foreign listener on `MCPO_PORT`, and liveness-checks mcpo before
+  exporting `TOOL_SERVER_CONNECTIONS`.
+- `server.py`: the `qwen3.5_122B` comment now gives the real smoke-test
+  command (`--constraint H200` spelled out — `start --force` alone would land
+  FP8 on an A100 and floor-bill a failed load).
+- `aider_model_metadata.json`: added `qwen3_4b` and `qwen3_32B` entries
+  (32768-token context, both key forms) so the documented
+  `code --model qwen3_*` paths do not trip litellm's unknown-context warning;
+  fixed the stale "8192 context" comment in `run_coding_agent.sh`.
+
+### Pre-existing items (Tier 4, user-approved)
+
+- `run_browser_demo.sh` gains the partial-staging guard `run_coding_agent.sh`
+  already had (a half-downloaded `--model` no longer submits and floor-bills).
+- `su_usage_mcp.py` usage-dir fallbacks now include the wrappers' default
+  `$HOME/.ai-session/state/logs/usage`, so an MCP server launched without
+  `AISESSION_STATE_DIR` finds the receipts.
+- `billing.md` w_gpu table: the A100 row no longer reads "A100-40GB" — one tier
+  for both memory sizes, with a note that sessions run on 80 GB nodes while the
+  `qwen3_4b` rate record was measured on a 40 GB PCIe card (policy yaml comment
+  aligned; no charged value changed).
+- Minor doc drifts: opencode page now distinguishes the config file from the
+  one workaround file (matching the FAQ); the front-page support section now
+  matches the FAQ's single RCC ticket channel with an `ai-session` routing
+  hint; the FAQ's "vision model on the roadmap" line replaced with
+  "text-only today; ask the operators". Not done (deliberately): GLM-5.2 stays
+  out of `MODEL_REGISTRY` until a serving path exists; the billing-sweep
+  crontab stays uninstalled; the dated "verified" lines stay.
+
+### Docs (Tiers 2–3)
+
+- Doc↔code fixes: `-J` tunnel described as fallback (not "equivalent");
+  `qwen3.5_122B` described as staged (weights on disk, awaiting H200
+  validation) instead of "coming"; H200 described as present hardware;
+  `qwen3_32B` no longer "being staged" on the opencode page; the front-page
+  data-location statement now points at the `AISESSION_TOOLS` opt-in
+  exception; session key length corrected to 32 hex characters;
+  `ai_session.py connect` prints the single-hop tunnel with the full
+  `.rcc.uchicago.edu` host.
+- Prose pass to the house style: frame-of-reference table rewritten with plain
+  comparatives (no "frontier-adjacent", `MoE`/BFCL-V4 expanded, one caveat
+  instead of three, dropped the self-contradicting cost sentence); Llama
+  phrasing now cites the Community License instead of "free to run";
+  removed "natural fit" / "three practical advantages" / "answer better";
+  "data residency" → "Data location".
+
 ## 2026-07-07 — LoRA serving, `ai-session mcp`, `module load opencode`, de-jargon pass 2
 
 ### LoRA adapter serving (new)

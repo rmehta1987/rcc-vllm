@@ -20,6 +20,44 @@
     "mode": "chat"
   },
 
+  "openai/qwen3_4b": {
+    "max_tokens": 4096,
+    "max_input_tokens": 28000,
+    "max_output_tokens": 4096,
+    "input_cost_per_token": 0,
+    "output_cost_per_token": 0,
+    "litellm_provider": "openai",
+    "mode": "chat"
+  },
+  "qwen3_4b": {
+    "max_tokens": 4096,
+    "max_input_tokens": 28000,
+    "max_output_tokens": 4096,
+    "input_cost_per_token": 0,
+    "output_cost_per_token": 0,
+    "litellm_provider": "openai",
+    "mode": "chat"
+  },
+
+  "openai/qwen3_32B": {
+    "max_tokens": 4096,
+    "max_input_tokens": 28000,
+    "max_output_tokens": 4096,
+    "input_cost_per_token": 0,
+    "output_cost_per_token": 0,
+    "litellm_provider": "openai",
+    "mode": "chat"
+  },
+  "qwen3_32B": {
+    "max_tokens": 4096,
+    "max_input_tokens": 28000,
+    "max_output_tokens": 4096,
+    "input_cost_per_token": 0,
+    "output_cost_per_token": 0,
+    "litellm_provider": "openai",
+    "mode": "chat"
+  },
+
   "openai/qwen2.5_72B": {
     "max_tokens": 4096,
     "max_input_tokens": 28000,

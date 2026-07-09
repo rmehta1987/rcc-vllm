@@ -41,10 +41,15 @@ MODEL_REGISTRY = {
 # to any user but gated behind a one-time license acknowledgment (see _LICENSE_GATED
 # in ai_session.py). Floors bill on GPU tier like every other model.
 #
-# qwen3.5_122B is registered (path + launcher TP=4/H200) but deliberately NOT here
-# yet: it is a native-FP8 MoE that requires H200 (FP8 needs Hopper) and has not been
-# smoke-tested on this cluster. Serve it with `start --force` to test; add it here
-# once a session loads and answers cleanly on H200.
+# qwen3.5_122B is registered but deliberately NOT here yet: it is a native-FP8 MoE
+# that requires H200 (FP8 needs Hopper) and has not been smoke-tested on this
+# cluster. NOTE: the H200 pin lives in `bin/ai-session` (constraint_for_model), NOT
+# in the launcher -- and `ai_session.py start` defaults to --constraint A100, so a
+# bare `start --force` would reserve an A100, fail on load, and still bill the
+# floor. Smoke-test with the constraint spelled out:
+#   ai_session.py start --model qwen3.5_122B --force --tp 4 --constraint H200 \
+#       --account rcc-staff --partition test --time 00:30:00 --wait
+# Add it here once a session loads and answers cleanly on H200.
 PHASE1_SERVED = {"qwen2.5_72B", "qwen2.5_coder_32B", "qwen3_4b", "qwen3_32B", "llama3.1_70B"}
 
 KNOWN_TIERS = ("h200", "h100", "l40s", "l40", "a100", "a40", "v100", "rtx6000")

@@ -33,23 +33,16 @@ For coding tools (aider, Continue, opencode) against the same service, see
 
 ## Prerequisites
 
-- **An RCC account.** No special group membership is required. The shared
-  environment, model weights, and commands under `/project/rcc/mehta5` are
-  readable by any RCC user and run read-only, so there is nothing to install or
-  copy.
+- **An RCC account.** No special group membership is required.  Get an [RCC Account here](https://rcc.uchicago.edu/accounts-allocations/request-account) .
 - A **Slurm account and GPU partition** to run the GPU job under. These are unique
-  to you and your PI, and the service has no default: the first time you start a
+  to you and your PI: the first time you start a
   session you pass them with `--account` and `--partition`, and they are then
-  remembered (see [Step 1](#step-1-start-the-session)). If you do not know them,
-  ask your PI or RCC which account and GPU partition to use, or run
-  `sacctmgr -nP show assoc user=$USER format=account` to list the accounts you
-  belong to.
+  remembered (see [Step 1](#step-1-start-the-session)). 
 - Run the login-node commands inside `tmux` or `screen`, so that an SSH disconnect
   does not kill the relay and UI processes that the start command leaves running.
-
+  
 Your writable state (chat history, session files, billing logs) is kept separate
-from the shared install, under a per-user directory. Ports are likewise derived
-from your numeric user ID, so two people on the same login node do not collide.
+under a per-user directory. Ports are likewise derived from your numeric user ID.
 
 ## Step 0: load the module
 

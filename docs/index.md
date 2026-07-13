@@ -107,9 +107,10 @@ sessions.
 
 Larger models are staged but not yet servable. Qwen3.5-122B-A10B (FP8) is
 registered and its weights are on disk; it becomes available once it passes
-validation on the cluster's H200 nodes. GLM-5.2 (FP8) is likewise registered
-with its weights on disk, but it needs multi-node H200 serving that is not yet
-built; GLM-5.1 comes later. The H200 hardware itself is already on the cluster;
+validation on the cluster's H200 nodes. It is a vision-language model, so it
+will be the first served model to accept images alongside text. GLM-5.2 (FP8),
+a text-only model, is likewise registered with its weights on disk, but it
+needs multi-node H200 serving that is not yet built; GLM-5.1 comes later. The H200 hardware itself is already on the cluster;
 what is pending is the serving work, not the machines.
 
 Guidance on choosing between the served models is on the

@@ -18,18 +18,23 @@ adapter is made.
 
 ## Is a LoRA adapter the right tool?
 
-The served models are **text** language models. A LoRA adapter on them is worth
-producing when a task is a **repeated pattern over many text inputs** — a fixed
-output format, a mapping from free text to a schema, a house writing or coding
-style — that you cannot get reliably from prompting alone. It is the wrong tool
-for several adjacent problems:
+The models served today are **text** language models, and the recipe on this page
+trains text adapters. (The staged `qwen3.5_122B` is a vision-language model that
+will also accept images once it is served — see the
+[model table](reference.md#models) — but for image tasks the tool is prompting
+that model, not an adapter; this page does not cover training vision adapters.)
+A LoRA adapter is worth producing when a task is a **repeated pattern over many
+text inputs** — a fixed output format, a mapping from free text to a schema, a
+house writing or coding style — that you cannot get reliably from prompting
+alone. It is the wrong tool for several adjacent problems:
 
 | Your goal | Better tool |
 |---|---|
 | A repeated text-to-text pattern over many inputs (this page) | LoRA adapter |
 | Answering from a body of facts or documents | Retrieval (embeddings), not training |
 | A single transformation with the material in hand | A coding session with the file in context |
-| Classifying images, or inference over a simulator (SBI) | A vision or density model — not a text model, so not this service |
+| Extracting or classifying from images | Prompting the vision-language model (`qwen3.5_122B`) once it is served — not an adapter from this page |
+| Inference over a simulator (SBI) | A density model — not a language model, so not this service |
 
 The single-transformation case is the common trap. "I have a statistical-genetics
 codebase that computes true effect sizes from noisy GWAS estimates and I want to

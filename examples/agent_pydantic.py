@@ -13,13 +13,14 @@ calling against the served model.
 --------------------------------------------------------------------------------
 Prerequisites
 --------------------------------------------------------------------------------
-1. A running ai-session with tool calling enabled. Start one on a login node:
+1. A running ai-session with tool calling enabled. Start one on a login node
+   (in tmux or screen), serving the 72B rather than the coder default:
 
-       AGENT_CLIENT=1 \
-         bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh up
+       module load ai-session
+       ai-session code --agent --model qwen2.5_72B
 
-   `AGENT_CLIENT=1` adds `--enable-auto-tool-choice --tool-call-parser hermes`
-   to the vLLM server, which is what lets the model emit structured tool calls.
+   `--agent` starts the server with tool calling enabled, which is what lets the
+   model emit the structured tool calls PydanticAI relies on.
 
 2. This script needs the `pydantic-ai` package, which is almost certainly NOT
    installed in the shared environments and MUST be installed by you, into your
@@ -33,19 +34,18 @@ Prerequisites
    without installing anything.
 
 --------------------------------------------------------------------------------
-Configuration (environment variables)
+Configuration (environment variables) -- all set by `eval "$(ai-session env)"`
 --------------------------------------------------------------------------------
-  AISESSION_BASE_URL   gateway base URL, default http://localhost:8421/v1
-                       (use your own GW_PORT, printed by `up`: 8400 + UID % 90)
-  AISESSION_API_KEY    the session access key `up` printed (required)
+  AISESSION_BASE_URL   gateway base URL, e.g. http://localhost:8421/v1
+                       (your own GW_PORT is 8400 + UID % 90)
+  AISESSION_API_KEY    the session access key (required)
   MODEL                served model key, default qwen2.5_72B
 
 --------------------------------------------------------------------------------
 Run
 --------------------------------------------------------------------------------
        source ~/agent-venv/bin/activate
-       export AISESSION_API_KEY="<the session key up printed>"
-       # export AISESSION_BASE_URL="http://localhost:<your GW_PORT>/v1"
+       eval "$(ai-session env)"   # sets AISESSION_BASE_URL / AISESSION_API_KEY
        python /project/rcc/mehta5/vllm/examples/agent_pydantic.py
 
 Model choice: the default is qwen2.5_72B, NOT the coding model. vLLM's `hermes`
@@ -60,7 +60,7 @@ import sys
 
 # Where the ai-session gateway listens, and the per-session key it requires.
 # The gateway binds to 127.0.0.1 on the login node; from a laptop, open the SSH
-# tunnel `up` prints so localhost:<GW_PORT> reaches it.
+# tunnel the start command prints so localhost:<GW_PORT> reaches it.
 BASE_URL = os.environ.get("AISESSION_BASE_URL", "http://localhost:8421/v1")
 API_KEY = os.environ.get("AISESSION_API_KEY", "")
 
@@ -84,15 +84,15 @@ install it, on a LOGIN node (compute nodes have no internet access).
 
        pip install pydantic-ai
 
-  3. Start a tool-calling session (login node, in tmux or screen):
+  3. Start a tool-calling session (login node, in tmux or screen), serving the
+     72B rather than the coder default:
 
-       AGENT_CLIENT=1 \\
-         bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh up
+       module load ai-session
+       ai-session code --agent --model qwen2.5_72B
 
-  4. Point this script at the gateway and run it:
+  4. Load the session URL and key into your shell and run this script:
 
-       export AISESSION_API_KEY="<the session key up printed>"
-       # export AISESSION_BASE_URL="http://localhost:<your GW_PORT>/v1"
+       eval "$(ai-session env)"
        python /project/rcc/mehta5/vllm/examples/agent_pydantic.py
 
 Nothing has been installed or changed. Exiting.
@@ -113,9 +113,9 @@ def main() -> int:
 
     if not API_KEY:
         print(
-            "AISESSION_API_KEY is not set. Export the session access key that "
-            "`up` printed (also saved at <state-dir>/logs/gateway/session_key), "
-            "then re-run. Exiting."
+            'AISESSION_API_KEY is not set. Run `eval "$(ai-session env)"` to '
+            "load the session's URL and key (the key is also saved at "
+            "<state-dir>/logs/gateway/session_key), then re-run. Exiting."
         )
         return 0
 

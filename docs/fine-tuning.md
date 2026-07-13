@@ -18,23 +18,20 @@ adapter is made.
 
 ## Is a LoRA adapter the right tool?
 
-The models served today are **text** language models, and the recipe on this page
-trains text adapters. (The staged `qwen3.5_122B` is a vision-language model that
-will also accept images once it is served — see the
-[model table](reference.md#models) — but for image tasks the tool is prompting
-that model, not an adapter; this page does not cover training vision adapters.)
-A LoRA adapter is worth producing when a task is a **repeated pattern over many
-text inputs** — a fixed output format, a mapping from free text to a schema, a
-house writing or coding style — that you cannot get reliably from prompting
-alone. It is the wrong tool for several adjacent problems:
+The models served today are text language models, so this page trains text
+adapters. A LoRA adapter is worth producing when one text-to-text mapping recurs
+across many inputs — a fixed output schema, free text mapped to structured
+fields, a house coding or writing style — and prompting alone will not hold the
+pattern. A single transformation, an image, or a numerical inference problem each
+wants a different tool:
 
-| Your goal | Better tool |
+| Task | Right tool |
 |---|---|
-| A repeated text-to-text pattern over many inputs (this page) | LoRA adapter |
-| Answering from a body of facts or documents | Retrieval (embeddings), not training |
-| A single transformation with the material in hand | A coding session with the file in context |
-| Extracting or classifying from images | Prompting the vision-language model (`qwen3.5_122B`) once it is served — not an adapter from this page |
-| Inference over a simulator (SBI) | A density model — not a language model, so not this service |
+| Turn thousands of pathology reports into one fixed set of fields | A LoRA adapter (the example on this page) |
+| Answer questions across a corpus of papers or lab protocols | Retrieval over embeddings, not training |
+| Port one GWAS effect-size script to PyTorch | A coding session with the repository open |
+| Extract a finding from a whole-slide image or micrograph | Prompt the vision-language model `qwen3.5_122B` (once served), not an adapter |
+| Recover a simulator's parameters (simulation-based inference) | A density estimator — a numerical model, not a language model |
 
 The single-transformation case is the common trap. "I have a statistical-genetics
 codebase that computes true effect sizes from noisy GWAS estimates and I want to

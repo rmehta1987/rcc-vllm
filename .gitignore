@@ -35,3 +35,8 @@ public/
 # --- local opencode dev files (this repo used as an opencode workspace) ---
 /opencode.json
 /AGENTS.md
+
+# --- copyrighted reference PDFs kept locally, never redistributed ---
+# Publisher supplements/papers used to source the docs (cited by DOI, not shipped).
+science.adz4351_sm.pdf
+*_sm.pdf

@@ -206,6 +206,100 @@ retry on failure; a server-enforced JSON mode is a planned addition. The full
 serving details — per-client usage, cost, and limits — are on
 [Using Your Own Fine-Tuned Model](lora.md).
 
+## Training the base model to act as an agent in your domain
+
+The [LoRA route above](#is-a-lora-adapter-the-right-tool) teaches a frozen base
+model a text-to-text pattern, and retrieval puts domain facts in front of a
+general model at inference. Neither changes how the base model behaves as an
+*agent* — how well it holds a multi-turn tool-calling loop and stays in a strict
+output format. When that agentic behavior is what you need from an open model you
+can serve entirely on the cluster, the base weights have to change, and the
+recipe is heavier than a LoRA by orders of magnitude.
+
+The biomedical agent in
+[Biomni (*Science* 2026)](https://www.science.org/doi/10.1126/science.adz4351) is
+the reference point, and it cuts two ways:
+
+- Its headline system needs **no training at all**: a strong general model
+  (the published work uses Claude, zero-shot) drives the agent, wrapped in
+  retrieval over a large curated biomedical data lake and code execution. If your
+  goal is an agent that is capable in your field, that agent-plus-retrieval
+  route — see [Agent responsibilities and risks](coding/agents.md) — is cheaper,
+  keeps improving as your data changes, and is the first thing to try.
+- Its open-weights variant, **Biomni-R0**, *is* trained, from Qwen3-8B and
+  Qwen3-32B, because the vanilla Qwen3 models struggle with multi-turn tool use
+  and strict format compliance. The two-phase recipe below is that variant's
+  (from the published *Science* version's supplement; it is not in the earlier
+  bioRxiv preprint), for the case where you need an open model — no external API
+  in the loop — to be the agent itself.
+
+### The two-phase recipe
+
+Biomni-R0's procedure, from the paper's supplement, is distillation followed by
+reinforcement learning. The numbers are the paper's, sized to that task; treat
+them as a starting point, not universal constants.
+
+| Phase | What it does | Data | Settings (from the paper) |
+|---|---|---|---|
+| 1 — Rejection-sampled SFT | Full-parameter supervised fine-tuning on expert trajectories, to teach the tool loop and the output format | 834 trajectories kept by rejection sampling: for each task, generate 8 rollouts with a strong teacher and keep the highest-reward one | 4 epochs, batch size 16, learning rate 1e-5, cosine annealing |
+| 2 — Reinforcement learning (GRPO) | Refine the policy on a group of rollouts per prompt, scored by a task ground-truth reward plus a formatting reward | 4447 samples | 1 epoch, batch size 32, 8 rollouts per sample, learning rate 1e-6, cosine |
+
+The teacher used for rejection sampling in the paper is Claude-4-Sonnet, a
+frontier API model. **That step sends your task prompts off the cluster**, which
+gives up the data-locality reason for using this service. If your trajectories
+contain protected or unpublished data, generate them with a strong *local* model
+instead — the served `qwen2.5_72B`, or `qwen3.5_122B` once it is served — and
+accept that a weaker teacher yields weaker distillation. If the data is public,
+an external teacher is fine.
+
+### Compute
+
+Full-parameter training of a 32B model does not fit on one GPU: the weights,
+gradients, and Adam optimizer state together need roughly 16 bytes per parameter
+— about 520 GB for Qwen3-32B — before activations, so the model is sharded across
+many GPUs. The paper's allocation:
+
+| Model | GPUs | Rollout parallelism | Actor-update parallelism |
+|---|---|---|---|
+| Biomni-R0-8b | 8 × A100 | 2-way tensor parallel | FSDP + 4-way sequence parallel |
+| Biomni-R0-32b | 16 × A100 | 4-way tensor parallel | FSDP + 4-way sequence parallel |
+
+16 × A100-80GB is two full GPU nodes. This is a multi-node, multi-day job on
+**your own allocation** — it does not run under ai-session and costs no Service
+Units; Slurm bills your account for the GPUs directly, as with the LoRA training
+above. If you do not have that budget, the LoRA and retrieval routes above are
+the realistic alternatives; there is no cheap path to full 32B reinforcement
+learning.
+
+### Tools
+
+- **Phase 1 (SFT)** is ordinary full-parameter supervised fine-tuning: the
+  [Step 3 script](#step-3-write-the-training-script) above with the LoRA config
+  removed (so every weight updates) and a sharding backend added — DeepSpeed
+  ZeRO-3 or PyTorch FSDP — because the full model no longer fits on one GPU.
+  Point `BASE` at `/project/rcc/mehta5/vllm/models/Qwen3-32B` and format each
+  trajectory with that model's own chat template, exactly as in the LoRA example.
+- **Phase 2 (RL)** uses GRPO (Group Relative Policy Optimization) with per-prompt
+  rollout groups and separate rollout and actor-update parallelism — which
+  frameworks like [verl](https://github.com/volcengine/verl) and
+  [OpenRLHF](https://github.com/OpenRLHF/OpenRLHF) implement: they run the rollout
+  generation through vLLM with tensor parallelism and the policy update through
+  FSDP, which is exactly the split in the compute table. Configure one of these
+  with the base checkpoint, your reward function, and the hyperparameters above
+  rather than writing the RL loop yourself.
+
+### Serving what you trained
+
+A fully retrained model is a new base checkpoint, not an adapter, so it is **not**
+loaded with `--lora` at session start. The service serves only pre-staged,
+registered models, and GPU nodes have no internet, so to serve your trained model
+through ai-session it must be staged like any other served model — copied into
+the model store and registered — which RCC staff do on request (see the staging
+note on the [home page](index.md#available-models)). Keep the tokenizer and chat
+template with the checkpoint so it serves and bills like the model it was trained
+from. Until it is staged, you can serve it yourself with your own vLLM on your own
+allocation.
+
 ## Getting help
 
 Training on your own data raises questions this page cannot answer in advance

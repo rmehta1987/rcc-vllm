@@ -56,8 +56,9 @@ ai-session status
 
 ## Step 2: Configure opencode
 
-On the cluster, opencode is provided as a module — the same mechanism as
-`ai-session` itself. **On the login node:**
+On the cluster, opencode is a central module, the same as `ai-session` itself:
+`module load opencode` works from any login node with no `module use` line and no
+special group membership. **On the login node:**
 
 ```bash
 module load opencode

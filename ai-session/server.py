@@ -30,6 +30,7 @@ MODEL_REGISTRY = {
     "qwen3_4b": f"{MODELS_ROOT}/Qwen3-4B",                  # single-GPU benchmark anchor
     "qwen3_32B": f"{MODELS_ROOT}/Qwen3-32B",               # thinking model (BF16, TP=2 A100)
     "qwen3.5_122B": f"{MODELS_ROOT}/Qwen3.5-122B-A10B-FP8", # MoE, native FP8 -- needs H200 (TP=4)
+    "glm5.2_753B": f"{MODELS_ROOT}/GLM-5.2-FP8",            # MoE 753B, native FP8 -- needs 2+ H200 nodes; see note below
     "llama3.1_70B": f"{MODELS_ROOT}/Meta-Llama-3.1-70B-Instruct",  # served, behind a license ack
     "qwen2.5_0.5B": f"{MODELS_ROOT}/Qwen2.5-0.5B-Instruct", # smoke test only -- never a billing ref
 }
@@ -50,6 +51,14 @@ MODEL_REGISTRY = {
 #   ai_session.py start --model qwen3.5_122B --force --tp 4 --constraint H200 \
 #       --account rcc-staff --partition test --time 00:30:00 --wait
 # Add it here once a session loads and answers cleanly on H200.
+#
+# glm5.2_753B is registered so the key, rate table, and staging tooling can refer
+# to it, but it cannot be served at all today: 755 GB of FP8 weights exceed one
+# H200 node (4 x 141 GB = 564 GB), so it needs the multi-node launcher path that
+# is not built, and the installed vLLM has no GlmMoeDsaForCausalLM support (a
+# vLLM upgrade is required first). Do not add it to PHASE1_SERVED and do not
+# `start --force` it -- the job would reserve nodes, fail on load, and bill the
+# floor.
 PHASE1_SERVED = {"qwen2.5_72B", "qwen2.5_coder_32B", "qwen3_4b", "qwen3_32B", "llama3.1_70B"}
 
 KNOWN_TIERS = ("h200", "h100", "l40s", "l40", "a100", "a40", "v100", "rtx6000")

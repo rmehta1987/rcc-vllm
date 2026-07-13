@@ -101,6 +101,7 @@ tp_for_model() {
 constraint_for_model() {
   case "$1" in
     qwen3.5_122B) echo H200 ;;
+    glm5.2_753B) echo H200 ;;
     *) echo "" ;;
   esac
 }

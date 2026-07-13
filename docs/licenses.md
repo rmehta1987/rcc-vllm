@@ -27,8 +27,9 @@ after `module load ai-session`.
 
 Models on the roadmap (see [Command Reference](reference.md#models)) will be added
 to this table with their licenses when they become servable: `qwen3.5_122B`
-(Qwen3.5-122B-A10B) is Apache-2.0; the GLM-5.1 / GLM-5.2 license terms will be
-recorded here before those models are offered.
+(Qwen3.5-122B-A10B) is Apache-2.0; `glm5.2_753B` (GLM-5.2) is MIT
+(`<models>/GLM-5.2-FP8/LICENSE`); the GLM-5.1 license terms will be recorded here
+before that model is offered.
 
 ## The Apache-2.0 models
 

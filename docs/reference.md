@@ -84,6 +84,7 @@ directory.
 | `qwen3_4b` | Qwen3-4B | Yes (`fast` preset; also `code --model qwen3_4b` for cheap coding) | Apache-2.0 |
 | `qwen3_32B` | Qwen3-32B | Yes (`--model qwen3_32B`; thinking model, A100 TP=2) | Apache-2.0 |
 | `qwen3.5_122B` | Qwen3.5-122B-A10B (FP8) | Staged; needs H200 (FP8 MoE, TP=4) — smoke test pending | Apache-2.0 |
+| `glm5.2_753B` | GLM-5.2 (FP8) | Staged; needs two or more H200 nodes (multi-node serving not yet built) and a vLLM upgrade | MIT |
 | `llama3.1_70B` | Meta-Llama-3.1-70B-Instruct | Yes (`--model llama3.1_70B`, after a one-time license acknowledgment) | Llama 3.1 Community License + Acceptable Use Policy |
 | `qwen2.5_0.5B` | Qwen2.5-0.5B-Instruct | RCC staff only (smoke tests) | Apache-2.0 |
 
@@ -94,8 +95,10 @@ additionally requires a one-time recorded acknowledgment.
 The H200 nodes are already on the cluster and billed like any other tier; the
 pending work is validation and multi-node serving, not hardware. `qwen3.5_122B`
 (Qwen3.5-122B-A10B, FP8) moves from staged to served once its H200 smoke test
-passes; the GLM-5.1 and GLM-5.2 (FP8) models come later — GLM-5.2 needs multi-node
-H200 serving that is not yet built.
+passes. `glm5.2_753B` (GLM-5.2, FP8) is staged but further from serving: its
+755 GB of weights exceed a single H200 node's 564 GB, so it needs the multi-node
+serving path that is not yet built, plus a vLLM upgrade that supports its
+architecture. GLM-5.1 comes later still.
 
 ### Rough capability frame of reference
 
@@ -111,7 +114,7 @@ parity.
 | `qwen3_32B` | o1-mini / GPT-4o-class reasoning | thinking model; multi-step reasoning |
 | `qwen2.5_72B`, `llama3.1_70B` | GPT-4-turbo / GPT-4o-mini (general) | strong 2024 general models, a generation behind 2026 frontier |
 | `qwen3.5_122B` *(staged)* | ≈ Claude Sonnet 4.5 / GPT-5-mini tier | mixture-of-experts model; scores higher than GPT-5-mini on the BFCL-V4 tool-use benchmark (72.2 vs 55.5), lower than Claude Opus |
-| GLM-5.2 *(roadmap)* | close to Claude Opus 4.8 on coding | within about 1 point of Opus 4.8 on FrontierSWE (74.4 vs 75.1) and 4 points on Terminal-Bench (81 vs 85); above GPT-5.5 on SWE-bench Pro; weaker than Opus on long-horizon agent tasks |
+| `glm5.2_753B` *(staged)* | close to Claude Opus 4.8 on coding | within about 1 point of Opus 4.8 on FrontierSWE (74.4 vs 75.1) and 4 points on Terminal-Bench (81 vs 85); above GPT-5.5 on SWE-bench Pro; weaker than Opus on long-horizon agent tasks |
 | GLM-5.1 *(roadmap)* | prior-gen frontier / GPT-5-mini tier | a clear step below 5.2 (Terminal-Bench 62 vs 81) |
 
 The trade is capability for locality: the closed models above score higher on most

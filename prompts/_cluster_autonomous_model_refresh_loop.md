@@ -110,9 +110,10 @@ serve + CPU score) → **Stage 3 service wiring** (CPU, per tier winner). Candid
   Qwen3.5-122B alone. Also: `launch_ai_session.sh` has no data-parallel path, so any DP serving is hand-written.
 
 **SERVE DISCIPLINE (every Stage-1/Stage-2 serve, candidate AND baseline — this closes four gauntlet findings):**
-1. **Env:** serve from `/project/rcc/mehta5/conda-envs/vllm-qwen35` (0.26.0) — NEVER `launch_ai_session.sh`
-   (it forces the 0.10.2 `vllm-probe` env). The baseline `qwen2.5_coder_32B` is served on 0.26.0 too, so the
-   Gate-2 comparison is same-version/same-env (an env mismatch silently games Gate 2).
+1. **Env:** serve from the **CUDA-12.x rebuild** (per the DRIVER CONSTRAINT below — NOT `vllm-qwen35`, whose
+   torch-2.11/cu130 fails to init CUDA on the current driver 535; `cluster_provenance.md`), and NEVER
+   `launch_ai_session.sh` (it forces the 0.10.2 `vllm-probe` env). The baseline `qwen2.5_coder_32B` is served on
+   the SAME env, so the Gate-2 comparison is same-version/same-env (an env mismatch silently games Gate 2).
 2. **Job name:** `--job-name mrefresh-nest-<stage>` so the orchestrator's wait/cancel sees it.
 3. **Served-model-name:** a benchmark-only name that is **NOT a `MODEL_REGISTRY` key** (e.g. `bench-<model>`),
    so production discovery never surfaces it AND `billing_sweep.py::model_key_of` never floor-bills it. The
@@ -159,12 +160,13 @@ This is the operator's load-bearing routing (`session_start.md §0`). Mirror `sc
   out — **`--constraint "A100|a100"` for Tier A** (Slurm features are case-sensitive; bare `A100` matches only 4
   contended nodes, `a100` another ~50) and **`--constraint H200` for Tier B** (uppercase is correct for the
   midway3-0600–0606 H200 nodes) — TP/DP per `session_start.md §2`, **time-boxed** (`--time=00:30:00` smoke /
-  `02:00:00` benchmark), env `mamba activate vllm-qwen35`, the **SERVE DISCIPLINE of §2** (name
+  `02:00:00` benchmark), env = the **CUDA-12.x serve rebuild** (per the §2 DRIVER CONSTRAINT — the cluster driver
+  is 535/CUDA-12.2, so `vllm-qwen35`/cu130 fails; `cluster_provenance.md`), the **SERVE DISCIPLINE of §2** (name
   `mrefresh-nest-<stage>`, served-model-name `bench-<model>` NOT a registry key). Run a **fast pre-flight BEFORE
   the full model load** so a doomed reservation fails cheap: `torch.cuda.is_available()` + a tiny fp tensor
-  (catches the torch-2.11/CUDA-13 driver gap) + the arch in `ModelRegistry.get_supported_archs()` + **a
-  quant-support probe for the exact quant** (FP8 block / NVFP4) on this GPU's compute capability — the arch being
-  registered does NOT mean its quant kernel runs on Hopper (the V4-Flash/FP4 trap, §2). Persist the id; end the turn.
+  (catches the driver/CUDA gap) + the arch in `ModelRegistry.get_supported_archs()` + **a quant-support probe for
+  the exact quant** (FP8 block / NVFP4) on this GPU's compute capability — the arch being registered does NOT
+  mean its quant kernel runs on Hopper (the V4-Flash/FP4 trap, §2). Persist the id; end the turn.
 - **`caslake` (CPU-only — everything else).** The Gate-0 arch dry-run (if not run in-allocation), benchmark
   scoring/aggregation, and rate-table math go to a right-sized `caslake` nested job — `--partition caslake
   --account rcc-staff` with **`--qos=caslake` (or omit `--qos`); NEVER `--qos=test`** (caslake rejects it) —

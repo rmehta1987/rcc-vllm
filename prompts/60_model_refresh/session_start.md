@@ -43,14 +43,23 @@ fresher model, chosen per serving tier on a **measured** raw-code-gen number, on
   scancels any `mrefresh-nest*` job **by name** on a terminal stop (job ids are persisted to `_scratch/` only so
   a chained orchestrator can re-attach). The loop must never depend on the driver cancelling a job.
 
+- **DRIVER CONSTRAINT (measured 2026-08-03 — `cluster_provenance.md`).** The H200 test nodes run driver
+  **535.216.03 (max CUDA 12.2)**. `vllm-qwen35` (vLLM 0.26.0 → torch 2.11/**cu130**/CUDA 13.0) **FAILS to init
+  CUDA** on it ("driver too old") — it is the offline-arch-resolution reference ONLY, never a GPU serve env.
+  CUDA-12.x torch works (cu128 proven). **PREREQUISITE (OPERATOR-DECISION-PENDING):** the GPU serve env must be
+  a **CUDA-12.x vLLM rebuild** — newest version that registers `qwen3_5_moe`+`glm_moe_dsa` (≥0.17.0) AND ships
+  `cu128`/`cu129` torch. Stage 1 cannot serve until that env exists (or the operator upgrades the driver to
+  ≥R580); its `torch.cuda.is_available()` pre-flight NO-GOs every serve on `vllm-qwen35` until then.
+
 **SERVE DISCIPLINE (every Stage-1/Stage-2 serve — candidate AND baseline; closes the launcher landmine).**
 NEVER invoke `ai-session/launch_ai_session.sh` — it hardcodes `ENV_PATH=vllm-probe` (0.10.2, where the new
-archs cannot load — serving there would DEFEAT Gate 0, which validated on 0.26.0) and submits a job named
-`<key>:<port>` (floor-billed, surfaced by production discovery, invisible to the `mrefresh-nest*` wait/cancel).
-Instead, write the nested `sbatch` yourself: `mamba activate .../vllm-qwen35`; a bare `vllm serve` with
-`--served-model-name bench-<model>` (NOT a `MODEL_REGISTRY` key); `--job-name mrefresh-nest-<stage>`. The
-baseline `qwen2.5_coder_32B` is served the SAME way (env `vllm-qwen35`, name `bench-coder32b`) so the Gate-2
-comparison is same-version/same-env — an env or version mismatch silently games Gate 2.
+archs cannot load — serving there would DEFEAT Gate 0) and submits a job named `<key>:<port>` (floor-billed,
+surfaced by production discovery, invisible to the `mrefresh-nest*` wait/cancel). Instead, write the nested
+`sbatch` yourself: `mamba activate` the **CUDA-12.x serve env** (per the DRIVER CONSTRAINT above — NOT
+`vllm-qwen35`); a bare `vllm serve` with `--served-model-name bench-<model>` (NOT a `MODEL_REGISTRY` key);
+`--job-name mrefresh-nest-<stage>`. The baseline `qwen2.5_coder_32B` is served the SAME way (same serve env,
+name `bench-coder32b`) so the Gate-2 comparison is same-version/same-env — an env or version mismatch silently
+games Gate 2.
 - **Do NOT disturb production.** Use `vllm-qwen35` (0.26.0) and the `test` partition only. Never touch the
   production `vllm-probe` (0.10.2) env, the live `PHASE1_SERVED` models, or their version-pinned `rate_table`
   records. Flipping a production default (adding a key to `PHASE1_SERVED`, a new `rate_table` row) happens ONLY

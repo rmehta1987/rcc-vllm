@@ -36,12 +36,34 @@ would therefore correctly NO-GO **every** GPU serve on `vllm-qwen35`.
 NOTE: only the H200 node was probed; the A100 test nodes are assumed to carry the same 535.x image
 (cluster-uniform) but this should be confirmed with the same probe before a Tier-A serve.
 
+## Why a plain CUDA-12.x pip rebuild is NOT possible here (measured 2026-08-03)
+
+The whole cluster is **el8 / glibc 2.28** (verified on the build node midway3-0200 AND the H200 node
+midway3-0603 — both `ldd (GNU libc) 2.28`). vLLM's wheel platform tags vs glibc:
+
+| vLLM | torch / CUDA (default) | wheel tag | runs on glibc 2.28? |
+|---|---|---|---|
+| 0.17.0–0.19.0 | 2.10.0 / **cu128 (12.8)** ✓ driver-OK | `manylinux_2_31` | **NO** (needs glibc ≥2.31) |
+| 0.20.0 | 2.11.0 / cu130 | `manylinux_2_35` | no |
+| 0.26.0 | 2.11.0 / **cu130 (13.0)** ✗ driver-fails | `manylinux_2_28` | yes (but CUDA-13) |
+
+So the arch-capable **CUDA-12.x** versions ship only **glibc-2.31** wheels that cannot run on this el8
+cluster; a normal `pip install` of 0.17–0.19 on the el8 build node rejects the wheel and falls back to a
+source build, which needs `nvcc` (absent from base PATH) → the 2026-08-03 build job 52974060 FAILED here.
+The only el8-runnable recent wheel (0.26.0) is CUDA-13 and fails on driver 535. **The two remaining paths:**
+1. **Source-build vLLM 0.19.0 against CUDA 12.8** — feasible (modules `cuda/12.8` + `gcc/12.2.0` exist;
+   pre-install `torch==2.10.0` cu128), but heavy (~30–60 min compile, failure-prone).
+2. **RCC driver upgrade to ≥ R580** — then the already-built `vllm-qwen35` (0.26.0, el8 `manylinux_2_28`
+   wheel) runs as-is with zero rebuild, and every future (CUDA-13) vLLM works too. Cluster-admin action.
+
 ## Provenance ledger (for verdict.md)
 
 | Job ID | Partition | Constraint | Node | What it proves |
 |---|---|---|---|---|
 | 52973706 | test | H200 | midway3-0605 | driver 535.216.03 / CUDA 12.2; cu130 fails to init |
 | 52973737 | test | H200 | midway3-0605 | cu128 (production torch) inits + matmuls; cu130 does not |
+| 52974060 | build | — | midway3-0200 | vLLM 0.19.0 pip install FAILED: manylinux_2_31 wheel rejected on glibc 2.28 → source build → no nvcc |
+| (srun) | test | H200 | midway3-0603 | H200 node is glibc 2.28 (manylinux_2_31 wheels can't run cluster-wide) |
 
 Reproduce:
 ```

@@ -22,6 +22,9 @@ logs/
 ai-session/logs/
 benchmark/logs/
 *.log
+
+# --- Autonomous-loop scratch (breaker counters, nested job ids, manifests) ---
+_scratch/
 **/session_key
 **/api_keys.json
 **/upstream.json

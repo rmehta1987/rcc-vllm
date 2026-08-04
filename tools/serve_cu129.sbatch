@@ -121,7 +121,7 @@ mkdir -p "$(dirname "$RESULT_PATH")"
 # kill and the loop's §9 infra-retry, the correct routing for a hardware wedge).
 if ! timeout -k 30 420 python "$SMOKE_PY" preflight "$MODEL_DIR"; then
   echo "STAGE1 PREFLIGHT_FAIL/timeout for $SERVED_NAME -- not loading weights"
-  python "$SMOKE_PY" writefail "$RESULT_PATH" "$SERVED_NAME" preflight_failed_or_timeout || true
+  timeout 30 python "$SMOKE_PY" writefail "$RESULT_PATH" "$SERVED_NAME" preflight_failed_or_timeout || true
   exit 0   # leave the queue cleanly; the JSON verdict records the NO-GO
 fi
 
@@ -131,7 +131,7 @@ fi
 # the frozen 30-min box + $SECONDS (elapsed since job start) only if scontrol is unavailable.
 SMOKE_TEARDOWN_S="${SMOKE_TEARDOWN_S:-180}"
 SMOKE_BOX_S="${SMOKE_BOX_S:-1800}"   # fallback box only (00:30:00, prereg.md §7)
-_end_iso="$(scontrol show job "${SLURM_JOB_ID:-0}" 2>/dev/null | grep -oP 'EndTime=\K\S+' || true)"
+_end_iso="$(timeout 15 scontrol show job "${SLURM_JOB_ID:-0}" 2>/dev/null | grep -oP 'EndTime=\K\S+' || true)"
 _end_epoch="$(date -d "${_end_iso:-invalid}" +%s 2>/dev/null || true)"
 if [ -n "${_end_epoch:-}" ]; then
   export SMOKE_DEADLINE_EPOCH=$(( _end_epoch - SMOKE_TEARDOWN_S ))

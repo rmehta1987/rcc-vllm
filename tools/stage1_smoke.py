@@ -69,9 +69,15 @@ ACCEPT_TIMEOUT_S = 20    # a pathological completion cannot hang the job
 
 
 def _write(result_path, obj):
-    os.makedirs(os.path.dirname(os.path.abspath(result_path)), exist_ok=True)
-    with open(result_path, "w") as fh:
-        json.dump(obj, fh, indent=2)
+    """Write a verdict JSON, swallowing filesystem errors so a write failure never becomes an
+    uncaught exception (the sbatch still kills the serve + leaves the queue; an absent verdict
+    routes to the loop's infra-retry)."""
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(result_path)), exist_ok=True)
+        with open(result_path, "w") as fh:
+            json.dump(obj, fh, indent=2)
+    except OSError as e:
+        print(f"could not write verdict to {result_path}: {e}", file=sys.stderr)
 
 
 def _hard_deadline():
@@ -143,8 +149,12 @@ def preflight(model_dir):
 
     # Quant probe: informational cc + a cheap dtype/floor check for the exact quant.
     q = cfg.get("quantization_config") or {}
-    qs = json.dumps(q).lower()
-    quant = q.get("quant_method") or q.get("quant_algo") or (
+    # Some checkpoints (e.g. DeepSeek-V4-Flash) carry a quant signal in TOP-LEVEL config keys
+    # (expert_dtype), not only in quantization_config -- fold those in so the fp4/mxfp4 floor
+    # is not silently skipped (project-documented gotcha, stage0_preflight.md).
+    top_hints = {k: cfg.get(k) for k in ("expert_dtype", "quant_method", "quantization") if k in cfg}
+    qs = (json.dumps(q) + " " + json.dumps(top_hints)).lower()
+    quant = q.get("quant_method") or q.get("quant_algo") or top_hints.get("expert_dtype") or (
         "fp8" if "fp8" in qs else
         "fp4" if ("fp4" in qs or "mxfp4" in qs or "nvfp4" in qs) else "none"
     )
@@ -289,10 +299,7 @@ def client(base_url, served_name, result_path):
 
 
 def writefail(result_path, served_name, reason):
-    try:
-        _write(result_path, {"stage": "1", "served_name": served_name, "pass": False, "reason": reason})
-    except OSError as e:
-        print(f"writefail: could not write verdict to {result_path}: {e}", file=sys.stderr)
+    _write(result_path, {"stage": "1", "served_name": served_name, "pass": False, "reason": reason})
     print(f"RESULT stage1 {served_name} : FAIL - {reason}")
     return 0
 

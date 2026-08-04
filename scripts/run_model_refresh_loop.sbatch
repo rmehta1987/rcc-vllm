@@ -36,6 +36,14 @@ SELF="$REPO/scripts/run_model_refresh_loop.sbatch"   # stable path -- NOT $0 (Sl
 cd "$REPO"
 mkdir -p logs _scratch
 
+# Sanitize the launching shell's Claude Code session vars so the nested `claude -p` driver starts a FRESH
+# headless session. This loop may be launched from WITHIN an interactive Claude Code session (which exports
+# CLAUDE_CODE_SESSION_ID / CLAUDECODE / CLAUDE_PID / ...); inheriting them can misroute the child driver, let it
+# touch the parent session's state, or (CLAUDE_PID) confuse the USR1 trap's process-group kill before the loop
+# reassigns it. Auth is file-based (~/.claude/.credentials.json), so unsetting these does NOT affect login.
+unset CLAUDECODE CLAUDE_CODE_SESSION_ID CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ENTRYPOINT \
+      CLAUDE_CODE_EXECPATH CLAUDE_PID CLAUDE_EFFORT AI_AGENT CLAUDE_CODE_SSE_PORT 2>/dev/null || true
+
 # Branch guard: land edits on the milestone branch, NEVER main. The agent commits to HEAD and the sbatch may be
 # launched from any branch -- force the branch up front and FAIL LOUD rather than committing to main.
 BASELINE_BRANCH="milestone/model-refresh"
@@ -100,11 +108,12 @@ chain_on_signal() {                     # USR1 ~10 min before the kill: stop chi
 trap chain_on_signal USR1
 
 # Env for the ORCHESTRATOR: miniforge module for git/mamba tooling + the node `claude` CLI on PATH. The NESTED
-# jobs and the in-allocation dry-run/download call the vllm-qwen35 env by ABSOLUTE path, so no activation here.
+# GPU serves go through tools/serve_cu129.sbatch (the vllm-serve-cu129 env); the in-allocation CPU arch dry-run
+# uses the vllm-serve-cu129 python by ABSOLUTE path, so no activation here.
 module load python/miniforge-25.3.0 2>/dev/null || true
 export PATH="$HOME/.local/bin:$PATH"    # the node-based `claude` CLI
 command -v claude >/dev/null || { echo "[FATAL] $(date) claude CLI not on PATH ($HOME/.local/bin)" >&2; exit 1; }
-export VLLM_QWEN35_PY="/project/rcc/mehta5/conda-envs/vllm-qwen35/bin/python"
+export VLLM_SERVE_PY="/project/rcc/mehta5/conda-envs/vllm-serve-cu129/bin/python"
 export HF_HUB_DISABLE_XET=1 HF_HUB_DOWNLOAD_TIMEOUT=60 HF_HOME=/project/rcc/mehta5/hf-cache   # in-allocation downloads
 
 heartbeat & HEARTBEAT_PID=$!

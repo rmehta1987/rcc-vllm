@@ -35,7 +35,11 @@ MODEL_DIR="${MODEL_DIR:?set MODEL_DIR to the staged model directory}"
 SERVED_NAME="${SERVED_NAME:?set SERVED_NAME (must start with bench-)}"
 TP="${TP:-2}"
 PORT="${PORT:?set PORT}"
-MAX_MODEL_LEN="${MAX_MODEL_LEN:-8192}"
+# 16384, not 8192: the frozen Gate-1/2 DECODE (prereg.md §3) sets max_tokens=8192, so an 8192-token
+# context window leaves NO room for the prompt -> vLLM 400 "maximum context length" (Tier-A job 53030556).
+# 16384 lets the frozen completion budget plus a Gate-2-sized prompt fit; far below the model cap (262144).
+# Scoring-neutral: max_tokens is unchanged, greedy output is identical; it only lets the request be accepted.
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-16384}"
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.90}"
 EAGER="${EAGER:-1}"   # 1 = enforce-eager (proven-safe on this driver). Set 0 for CUDA graphs
                       # (higher Gate-2 throughput) ONLY after confirming it loads cleanly here.

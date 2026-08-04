@@ -280,6 +280,20 @@ def client(base_url, served_name, result_path):
                **DECODE}
     try:
         st, data = _http_post_json(base + "/v1/chat/completions", payload, timeout=gen_timeout)
+    except urllib.error.HTTPError as e:
+        # vLLM puts the ACTUAL reason (bad param, context overflow, missing template, ...) in the
+        # response BODY; str(HTTPError) is only "HTTP Error 400: Bad Request". Read the body so a
+        # request-level failure is diagnosable from the verdict instead of opaque (job 53030556).
+        body = ""
+        try:
+            body = e.read().decode("utf-8", "replace")[:500]
+        except Exception:  # noqa: BLE001
+            pass
+        reason = f"chat/completions HTTP {e.code}: {body or e.reason}"
+        _write(result_path, {"stage": "1", "served_name": served_name, "pass": False,
+                             "reason": reason, "http_status": e.code})
+        print(f"RESULT stage1 {served_name} : FAIL - {reason}")
+        return 1
     except Exception as e:  # noqa: BLE001
         _write(result_path, {"stage": "1", "served_name": served_name, "pass": False,
                              "reason": f"chat/completions error: {type(e).__name__}: {e}"})

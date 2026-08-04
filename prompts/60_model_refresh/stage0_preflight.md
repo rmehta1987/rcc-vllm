@@ -46,9 +46,12 @@ expert_dtype         : "fp4"                            # the 256 routed experts
 n_routed_experts=256, n_shared_experts=1, num_experts_per_tok=6, num_hidden_layers=43
 ```
 
-So the memory [[project_coding_model_landscape_2026]] is RIGHT that the experts are
-4-bit; it is imprecise only in calling them "NVFP4" (this checkpoint is **MXFP4**,
-see below) and in "DP=4" (TP=4 fits, see footprint). The frozen plan's FP4-on-Hopper
+So the memory [[project_coding_model_landscape_2026]] and the frozen plan are RIGHT
+that the experts are 4-bit (the memory: "native FP4+FP8", "--data-parallel-size 4").
+The "NVFP4" specificity is the plan's framing (`session_start.md §0` / the loop
+prompt), not the memory's; and this checkpoint's experts are in fact **MXFP4** (see
+below). Data-parallel is unnecessary here — TP=4 fits (see footprint). The frozen
+plan's FP4-on-Hopper
 NO-GO is therefore live and must be adjudicated on real vLLM-0.26.0 support, not on
 the generic hardware fact that native FP4 tensor cores are Blackwell.
 
@@ -60,21 +63,30 @@ Adjudication (measured against the installed vLLM 0.26.0 source, `vllm-serve-cu1
    `FLASHMLA_SPARSE_DSV4`) whose `supports_compute_capability` returns
    `capability.major in [9, 10]` — **9 is Hopper** — and
    `vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py` (name
-   `FLASHINFER_MLA_SPARSE_DSV4`) which is Blackwell-only ("requires SM10x or
-   SM12x"). On sm_90 the FlashMLA backend is the one selected; Hopper is supported.
+   `FLASHINFER_MLA_SPARSE_DSV4`) which is Blackwell-only (`supports_compute_capability`
+   `major in [10, 12]`; "requires SM10x or SM12x"). On sm_90 the dispatcher
+   `vllm/models/deepseek_v4/nvidia/model.py::_select_dsv4_attn_cls` selects the
+   FlashMLA path (`DeepseekV4FlashMLAAttention`) for `major==9`; the FlashMLA kernels
+   are compiled into this wheel (`_flashmla_C` / `_flashmla_extension_C`) and
+   `vllm/v1/attention/ops/flashmla.py::is_flashmla_sparse_supported` returns True for
+   capability family 90. Hopper is supported.
 2. **The FP4 experts are MXFP4, and MXFP4 has a Hopper backend.**
    `vllm/models/deepseek_v4/quant_config.py::DeepseekV4FP8Config.get_quant_method`
    routes `RoutedExperts` with `expert_dtype=="fp4"` (and no
    `moe_quant_algo=="NVFP4"`, which this config does not declare) to
-   `Mxfp4MoEMethod` — its docstring: "MXFP4 experts with ue8m0 FP8 linear scales."
-   `Mxfp4Config.get_min_capability()==80` (sm_80+), and
+   `Mxfp4MoEMethod` (per `DeepseekV4FP8Config`'s docstring: "MXFP4 experts with ue8m0
+   FP8 linear scales"). `Mxfp4Config.get_min_capability()==80` (sm_80+), and
    `vllm/model_executor/layers/fused_moe/oracle/mxfp4.py::select_deepseek_v4_mxfp4_moe_backend`
-   walks a priority list and returns the first backend whose `is_supported_config`
-   passes: on sm_90 the Blackwell backends (TRTLLM / FlashInfer-cutlass) report
-   unsupported and it falls back to a Triton/Marlin MXFP4 backend. (MXFP4-on-Hopper
-   is the established gpt-oss path; DeepGEMM is disabled by `tools/serve_cu129.sbatch`
-   so `DEEPGEMM_MXFP4` is never selected.) `NotImplementedError` fires only if NO
-   backend matches — not the case on sm_90.
+   walks the DSV4 candidate list [FLASHINFER_TRTLLM_MXFP4_MXFP8, DEEPGEMM_MXFP4,
+   MARLIN, BATCHED_MARLIN] and returns the first whose `is_supported_config` passes.
+   On sm_90 the TRTLLM candidate is Blackwell and DEEPGEMM is SM100 (and off here via
+   `tools/serve_cu129.sbatch`'s `VLLM_USE_DEEP_GEMM=0`), both rejected, leaving
+   **MARLIN** — which needs only compute capability (7,5) and supports `kMxfp4Static`,
+   so it is selected on Hopper. (Triton-unfused is commented out of the DSV4 list due
+   to an MTP bug, so the fallback is Marlin specifically; MXFP4-MoE-on-Hopper via
+   Marlin is the established gpt-oss path. The only SM100-only MoE path, DeepGEMM
+   MegaMoE, is opt-in via `moe_backend` and off by default.) `NotImplementedError`
+   fires only if NO candidate passes — not the case on sm_90.
 3. **FP8 dense/attention linear** is native on Hopper (proven, the 122B above).
 4. **Footprint** from `model.safetensors.index.json`: `total_size` =
    159 609 485 896 B (159.6 GB / 148.6 GiB) across 46 shards — fits one 4xH200 node

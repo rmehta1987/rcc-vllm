@@ -21,16 +21,38 @@ PORT=${1:-3000}
 # default it under the user's HOME (mode 700, owner-only). Storing it in the
 # group-readable project tree let any cluster user read another person's chats;
 # HOME is owner-only, so keep the chat DB there.
-# HF_HOME is a model cache Open WebUI may WRITE to (it downloads embedding models
-# on first RAG use, since OFFLINE_MODE defaults to False). Default it under the
-# user's own state dir; the old /project/rcc/mehta5 default is not writable by
-# users outside rcc-staff, which would fail those downloads.
 export DATA_DIR=${DATA_DIR:-$HOME/.ai-session/openwebui-data}
+# HF_HOME is per-user WRITABLE: Open WebUI writes here (any embedding-model
+# download, lock files, incidental cache). Keep it under the user's own state dir
+# so a non-owner NEVER has to write into the shared install tree.
 export HF_HOME=${HF_HOME:-${AISESSION_STATE_DIR:-$HOME/.ai-session/state}/hf_cache}
 mkdir -p "$HOME/.ai-session" "$DATA_DIR" "$HF_HOME"
 # Lock the private home subtree to owner-only, so it stays unreadable to other
 # users even if HOME were ever loosened.
 chmod 700 "$HOME/.ai-session" "$DATA_DIR"
+
+# Embedding model (RAG) shared cache. On first run Open WebUI loads
+# all-MiniLM-L6-v2; letting every user re-download it into their empty HF_HOME is
+# slow and can overrun the UI bind-wait. If a world-READABLE shared cache holds it,
+# read from there (reads only -- no write access to the shared cache required) and
+# flip offline so the resolver takes the cache hit with no lock and no network.
+# Reads resolve via HF_HUB_CACHE (shared); writes still go to HF_HOME (per-user),
+# so this works for ANY user, rcc-staff or not. If the shared cache is absent or
+# unreadable, fall through to a per-user online download. An explicit OFFLINE_MODE
+# already in the environment is honored and never overridden. `find -readable`
+# tests the CURRENT user's real access, so a non-owner who can't read it falls back.
+SHARED_HF_CACHE=${AISESSION_SHARED_HF_CACHE:-/project/rcc/mehta5/hf_cache/hub}
+EMBED_SNAP="$SHARED_HF_CACHE/models--sentence-transformers--all-MiniLM-L6-v2"
+EMBED_OK=$(find "$EMBED_SNAP/snapshots" -maxdepth 2 -name model.safetensors -readable 2>/dev/null | head -1 || true)
+if [ -z "${OFFLINE_MODE:-}" ] && [ -n "$EMBED_OK" ]; then
+  export HF_HUB_CACHE="$SHARED_HF_CACHE"   # embedding model resolves here (shared, read-only)
+  export HF_HUB_OFFLINE=1                  # cache hit: no lock, no download, no write to the shared cache
+  export OFFLINE_MODE=True
+  echo "[openwebui] embedding model: shared read-only cache $SHARED_HF_CACHE (offline, no download)"
+else
+  export OFFLINE_MODE=${OFFLINE_MODE:-False}   # per-user online download into HF_HOME on first run
+  echo "[openwebui] embedding model: per-user cache $HF_HOME (online download on first run)"
+fi
 
 # Point the single OpenAI backend at the gateway; disable the Ollama backend.
 # The gateway now requires a per-session access key. Prefer the one already in the
@@ -50,7 +72,7 @@ export WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-ai-session-demo-key}
 export ANONYMIZED_TELEMETRY=False
 export DO_NOT_TRACK=true
 export SCARF_NO_ANALYTICS=true
-export OFFLINE_MODE=${OFFLINE_MODE:-False}
+# OFFLINE_MODE is set above (shared-cache branch), not here.
 
 # --- Optional web + reference tools (OPT-IN; default OFF preserves "nothing leaves RCC") ---
 # Enable with AISESSION_TOOLS=1. Adds three capabilities the user turns on per chat:

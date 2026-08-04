@@ -23,6 +23,7 @@
 #   and each user gets PER-USER default ports (derived from your UID) so two people
 #   on the same login node don't collide. Override any of these via env:
 #       AISESSION_STATE_DIR  GW_PORT  OWUI_PORT  MODEL  TP  CONSTRAINT  READY_TIMEOUT
+#       OWUI_READY_TIMEOUT  AISESSION_SHARED_HF_CACHE
 #
 #   e.g. the big model:  MODEL=qwen2.5_72B TP=4 CONSTRAINT=A100 bash .../run_browser_demo.sh up
 #
@@ -72,6 +73,11 @@ OWUI_PORT=${OWUI_PORT:-$((3000 + UID_NUM % 90))}
 MCPO_PORT=${MCPO_PORT:-$((OWUI_PORT + 500))}
 export GW_PORT MCPO_PORT
 READY_TIMEOUT=${READY_TIMEOUT:-900}
+# How long to wait for Open WebUI to bind its port before failing `up`. A cold
+# first run (heavy imports + first-run DB migration on NFS, and -- absent a shared
+# cache -- an embedding-model download) can exceed the old hardcoded 180s; make it
+# tunable and default higher so a slow-but-fine start is not torn down prematurely.
+OWUI_READY_TIMEOUT=${OWUI_READY_TIMEOUT:-300}
 ACTION=${1:-up}
 
 # --- helpers ---------------------------------------------------------------- #
@@ -214,14 +220,14 @@ do_up() {
     echo "    gateway healthy (pid $GW_PID)  log: $RUN_DIR/gateway.log"
   fi
 
-  echo "==> [3/3] starting Open WebUI on 127.0.0.1:$OWUI_PORT (heavy imports -- ~30-60s)"
+  echo "==> [3/3] starting Open WebUI on 127.0.0.1:$OWUI_PORT (heavy first-run imports -- up to ${OWUI_READY_TIMEOUT}s)"
   # run_openwebui.sh reads GW_PORT (exported) + AISESSION_STATE_DIR, then `exec`s
   # open-webui, so $! IS the UI process.
   nohup bash "$HERE/run_openwebui.sh" "$OWUI_PORT" \
       > "$RUN_DIR/openwebui.log" 2>&1 &
   OWUI_PID=$!
   echo "openwebui $OWUI_PID" >> "$PIDFILE"
-  wait_port "$OWUI_PORT" 180 "Open WebUI"
+  wait_port "$OWUI_PORT" "$OWUI_READY_TIMEOUT" "Open WebUI"
   echo "    Open WebUI serving (pid $OWUI_PID)  log: $RUN_DIR/openwebui.log"
 
   trap - EXIT   # the stack is fully up; failures past here are not up-failures

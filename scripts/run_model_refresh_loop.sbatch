@@ -129,6 +129,7 @@ MAX_THROTTLE=12                         # ~50 min of capped backoff before decla
 MAX_NOPROGRESS=25                       # consecutive no-commit iterations before declaring a stall
 TH_FILE="$REPO/_scratch/.mrefresh_throttle"
 NP_FILE="$REPO/_scratch/.mrefresh_noprogress"
+SID_FILE="$REPO/_scratch/.mrefresh_sid"   # dedicated driver session id -- never `claude --continue` (see loop)
 fastfail=$(cat "$FF_FILE" 2>/dev/null || echo 0); [[ "$fastfail" =~ ^[0-9]+$ ]] || fastfail=0
 throttle=$(cat "$TH_FILE" 2>/dev/null || echo 0); [[ "$throttle" =~ ^[0-9]+$ ]] || throttle=0
 noprogress=$(cat "$NP_FILE" 2>/dev/null || echo 0); [[ "$noprogress" =~ ^[0-9]+$ ]] || noprogress=0
@@ -166,12 +167,18 @@ for ((i=1; i<=MAX_ITERS; i++)); do
 
   LOG="logs/mrefresh-iter-${SLURM_JOB_ID:-local}-$i.log"
   head_before=$(git rev-parse HEAD 2>/dev/null || echo none)
-  if [[ -f _scratch/.mrefresh_started ]]; then
-    claude -p --continue "Continue the loop per $PROMPT. Orient from git state (§1); resume the current stage." \
+  # Pin the driver to a DEDICATED session id so `claude` never resolves to an unrelated "most recent"
+  # session -- e.g. an interactive Claude Code session open in this repo dir, which silently hijacks the
+  # driver's turns (observed 2026-08-04). `--continue` is BANNED here for exactly that reason. The first
+  # turn of a stage creates the id (--session-id); later turns resume it (--resume); STAGE_LANDED removes
+  # .mrefresh_started so the next iteration mints a fresh id (new session per stage, as before).
+  if [[ -f _scratch/.mrefresh_started && -s "$SID_FILE" ]]; then
+    claude -p --resume "$(cat "$SID_FILE")" "Continue the loop per $PROMPT. Orient from git state (§1); resume the current stage." \
       --model claude-opus-4-8 --effort max --dangerously-skip-permissions --max-turns 400 > "$LOG" 2>&1 &
   else
+    { uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid; } > "$SID_FILE"
     touch _scratch/.mrefresh_started
-    claude -p "$(cat "$PROMPT")" \
+    claude -p --session-id "$(cat "$SID_FILE")" "$(cat "$PROMPT")" \
       --model claude-opus-4-8 --effort max --dangerously-skip-permissions --max-turns 400 > "$LOG" 2>&1 &
   fi
   CLAUDE_PID=$!; wait "$CLAUDE_PID"; rc=$?

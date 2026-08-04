@@ -8,8 +8,8 @@ loop `prompts/_cluster_autonomous_model_refresh_loop.md`; do not re-derive its g
 ## 0. Goal and the one load-bearing discipline
 
 Replace the stale served coding model (`qwen2.5_coder_32B`, Qwen2.5-Coder-32B-Instruct, late-2024) with a
-fresher model, chosen per serving tier on a **measured** raw-code-gen number, on the new `vllm-qwen35` env
-(vLLM 0.26.0). Two tiers (ratified with the operator 2026-08-03):
+fresher model, chosen per serving tier on a **measured** raw-code-gen number, on the proven `vllm-serve-cu129`
+env (vLLM 0.26.0+cu129; see the DRIVER CONSTRAINT below). Two tiers (ratified with the operator 2026-08-03):
 - **Tier A — single A100 node** (4×A100-80GB, no FP8): candidate `Qwen/Qwen3-Coder-30B-A3B-Instruct` (30.5B/3.3B
   active MoE), BF16, TP=2. Deployable on today's hardware.
 - **Tier B — single H200 node** (4×H200-141GB, native FP8): candidates `Qwen3.5-122B-A10B-FP8` (already staged,
@@ -43,24 +43,33 @@ fresher model, chosen per serving tier on a **measured** raw-code-gen number, on
   scancels any `mrefresh-nest*` job **by name** on a terminal stop (job ids are persisted to `_scratch/` only so
   a chained orchestrator can re-attach). The loop must never depend on the driver cancelling a job.
 
-- **DRIVER CONSTRAINT (measured 2026-08-03 — `cluster_provenance.md`).** The H200 test nodes run driver
-  **535.216.03 (max CUDA 12.2)**. `vllm-qwen35` (vLLM 0.26.0 → torch 2.11/**cu130**/CUDA 13.0) **FAILS to init
-  CUDA** on it ("driver too old") — it is the offline-arch-resolution reference ONLY, never a GPU serve env.
-  CUDA-12.x torch works (cu128 proven). **PREREQUISITE (OPERATOR-DECISION-PENDING):** the GPU serve env must be
-  a **CUDA-12.x vLLM rebuild** — newest version that registers `qwen3_5_moe`+`glm_moe_dsa` (≥0.17.0) AND ships
-  `cu128`/`cu129` torch. Stage 1 cannot serve until that env exists (or the operator upgrades the driver to
-  ≥R580); its `torch.cuda.is_available()` pre-flight NO-GOs every serve on `vllm-qwen35` until then.
+- **DRIVER CONSTRAINT — RESOLVED 2026-08-03 (operator-ratified; `cluster_provenance.md`).** The H200 test
+  nodes run driver **535.216.03 (max CUDA 12.2)**, so any CUDA-13/cu130 vLLM (incl. `vllm-qwen35`, torch
+  2.11/cu130) **fails to init CUDA** — `vllm-qwen35` is the offline-arch-resolution reference ONLY, never a
+  serve env. **The serve env is `/project/rcc/mehta5/conda-envs/vllm-serve-cu129`** = the prebuilt
+  `vllm==0.26.0+cu129` wheel (CUDA 12.9, el8 `manylinux_2_28`) + torch 2.11.0+cu129 (install recipe
+  `sbatch_build_vllm_cu129.sh`, ~7 min, no compile). cu129 is a CUDA-12.x minor version → runs on driver 535;
+  **PROVEN** serving Qwen3-4B (TP=1) and Qwen3.5-122B-A10B-FP8 (`qwen3_5_moe`/FP8, TP=2) on H200 (jobs
+  52984938 / 52985604). No source build, no driver upgrade. The Stage-1 `torch.cuda.is_available()` pre-flight
+  now PASSES on this env (the old cu130 gap is gone); the surviving Stage-1 risk is a per-model quant kernel
+  (the V4-Flash FP4-on-Hopper NO-GO below).
 
 **SERVE DISCIPLINE (every Stage-1/Stage-2 serve — candidate AND baseline; closes the launcher landmine).**
 NEVER invoke `ai-session/launch_ai_session.sh` — it hardcodes `ENV_PATH=vllm-probe` (0.10.2, where the new
 archs cannot load — serving there would DEFEAT Gate 0) and submits a job named `<key>:<port>` (floor-billed,
-surfaced by production discovery, invisible to the `mrefresh-nest*` wait/cancel). Instead, write the nested
-`sbatch` yourself: `mamba activate` the **CUDA-12.x serve env** (per the DRIVER CONSTRAINT above — NOT
-`vllm-qwen35`); a bare `vllm serve` with `--served-model-name bench-<model>` (NOT a `MODEL_REGISTRY` key);
-`--job-name mrefresh-nest-<stage>`. The baseline `qwen2.5_coder_32B` is served the SAME way (same serve env,
-name `bench-coder32b`) so the Gate-2 comparison is same-version/same-env — an env or version mismatch silently
-games Gate 2.
-- **Do NOT disturb production.** Use `vllm-qwen35` (0.26.0) and the `test` partition only. Never touch the
+surfaced by production discovery, invisible to the `mrefresh-nest*` wait/cancel). Instead submit the canonical
+**`tools/serve_cu129.sbatch`** — it runs `vllm serve` on the `vllm-serve-cu129` env with the THREE env fixes
+that env REQUIRES on a GPU node baked in (a bare `mamba activate` is NOT enough): (1) `LD_LIBRARY_PATH=$ENV/lib`
+prepended after the module loads (env libstdc++ has CXXABI_1.3.15 for ICU/sqlite3; el8 and gcc12 are too old);
+(2) `module load cuda/12.8 gcc/12.2.0` (FlashInfer JIT-compiles its sm_90a sampler on first use); (3)
+`VLLM_USE_DEEP_GEMM=0` + `VLLM_MOE_USE_DEEP_GEMM=0` (driver 535 lacks DeepGEMM's driver-API symbol → prebuilt
+CUTLASS FP8 MoE). It **self-asserts** the fences — job name `mrefresh-nest*`, served-model-name `bench-*` — and
+exits before reserving a GPU if either is wrong. Pass per-candidate knobs via sbatch flags + `--export` (see its
+header: `MODEL_DIR`, `SERVED_NAME`, `TP`, `PORT`, constraint/gres/time). The baseline `qwen2.5_coder_32B` is
+served the SAME way (same env/template, name `bench-coder32b`) so the Gate-2 comparison is same-version/same-env
+— an env or version mismatch silently games Gate 2.
+- **Do NOT disturb production.** Serve on the `vllm-serve-cu129` env (use `vllm-qwen35` only for CPU arch
+  dry-runs) and the `test` partition only. Never touch the
   production `vllm-probe` (0.10.2) env, the live `PHASE1_SERVED` models, or their version-pinned `rate_table`
   records. Flipping a production default (adding a key to `PHASE1_SERVED`, a new `rate_table` row) happens ONLY
   behind Gate 3 + a cleared gauntlet.
@@ -74,7 +83,7 @@ games Gate 2.
 ## 2. Stages, each looped to its gate (dependency order)
 
 - **Stage 0 — LOAD-SAFETY (CPU; the anti-floor-bill guard).** For each candidate, run
-  `tools/arch_dryrun.py <model_dir>` in the `vllm-qwen35` env (CPU, in-allocation on `build` or a `caslake`
+  `tools/arch_dryrun.py <model_dir>` in the `vllm-serve-cu129` env (CPU, in-allocation on `build` or a `caslake`
   nested job). **Gate 0: exit code 0** (arch registered + model class imports + config parses + tokenizer
   loads; the probe also prints `^RESULT .*: PASS`). A candidate that fails Gate 0 is recorded as blocked and
   **never reaches a GPU**. Weights must be on disk first — if absent, that candidate's Stage 0 waits on its
@@ -95,7 +104,7 @@ games Gate 2.
   data-parallel (hand-written — `launch_ai_session.sh` has no DP path). Poll `/health`, then send a fixed
   text-only code prompt to `/v1/chat/completions`. **Gate 1:** the server reaches ready and returns a coherent,
   compilable answer within the time box. **Pre-flight BEFORE the full load** (so a doomed reservation fails
-  cheap): `torch.cuda.is_available()` + tiny fp tensor (torch-2.11/CUDA-13 driver gap) + arch registered + **the
+  cheap): `torch.cuda.is_available()` + tiny fp tensor (PASSES on `vllm-serve-cu129` — the old cu130 gap is gone) + arch registered + **the
   quant kernel is supported on this GPU's compute capability**. **V4-Flash / FP4-on-Hopper NO-GO:** NVFP4
   compute is Blackwell (sm_100+); these H200s are Hopper (sm_90). If vLLM 0.26.0 cannot run V4-Flash's FP4 on
   sm_90, that is a **clean Gate-1 NO-GO for V4-Flash — NOT a §9 infra-retry** (do not burn 5 H200 reservations
@@ -104,7 +113,7 @@ games Gate 2.
   accept-check sends text only and asserts a clean completion with no multimodal input.
 - **Stage 2 — RAW CODE-GEN (GPU serve + CPU score).** Run a **pinned** LiveCodeBench subset (§Constants:
   version, problem set, decoding) **identically** against the candidate and the `qwen2.5_coder_32B` baseline —
-  **both served under the SERVE DISCIPLINE on the SAME `vllm-qwen35`/0.26.0 env, same decode, same harness**
+  **both served under the SERVE DISCIPLINE on the SAME `vllm-serve-cu129`/0.26.0 env, same decode, same harness**
   (an env/version/decode mismatch silently games the gate); score on CPU. **Gate 2:** the tier winner's measured
   pass@1 exceeds the baseline by ≥ the pre-registered margin (§Constants). Report the honest measured number; a
   vendor self-report never substitutes. **Fail-branch:** if no candidate beats the baseline by the margin at a
@@ -127,7 +136,13 @@ detect it. **Before ANY Stage-1/Stage-2 `mrefresh-nest` job scores, assert:** (i
 prompts/60_model_refresh/prereg.md` (unmodified since). If any check fails, that is a §9 blocker — never create
 or edit `prereg.md` post-hoc. Constants to fix:
 - `LCB_VERSION` = LiveCodeBench release + `LCB_SUBSET` = the pinned problem ids (time-boxable in ≤2 h/model).
-- `DECODE` = temperature/top-p/max-tokens, identical for baseline and candidate.
+- `DECODE` = temperature/top-p/max-tokens, identical for baseline and candidate. **Thinking-model caveat
+  (verified on the cu129 serve 2026-08-03, job 52987444):** Qwen3/Qwen3.5 emit `<think>` first, and
+  `--reasoning-parser qwen3` (in `serve_cu129.sbatch`) routes the CoT to the response `reasoning` field while
+  the ANSWER lands in `content` only AFTER thinking ends. The Gate-1 accept-check and Gate-2 scorer must read
+  `content` (not `reasoning`), and `max-tokens` must be large enough to finish thinking AND answer — too small
+  yields `content=null` / `finish_reason=length`, a FALSE fail. Alternatively pin `enable_thinking=false` for
+  the benchmark. Whichever is chosen, apply it identically to baseline and candidate.
 - `WIN_MARGIN` = required pass@1 lead over baseline (pre-register, e.g. +2.0 points absolute).
 - `SMOKE_PROMPT` = the fixed Gate-1 text-only code prompt + its accept check (compiles / passes a unit assertion).
 - Time boxes: smoke `00:30:00`, benchmark `02:00:00`, download in-allocation (background).

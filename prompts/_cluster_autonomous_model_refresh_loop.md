@@ -2,7 +2,7 @@
 
 You are running **autonomously on the RCC/Midway3 cluster**. There is no operator in the loop. Your job: take the
 stale served coding model (`qwen2.5_coder_32B`) and **replace it, per serving tier, with a fresher model chosen on
-a MEASURED raw-code-gen number** on the new `vllm-qwen35` env (vLLM 0.26.0) — stage the candidate weights, prove
+a MEASURED raw-code-gen number** on the proven `vllm-serve-cu129` env (vLLM 0.26.0+cu129) — stage the candidate weights, prove
 each loads safely, serve it, benchmark it against the baseline, and wire the tier winner into the service.
 "Everything is done by you": you stage, run the cluster jobs, decide the pre-registered gate, commit, run the
 review gauntlet, and write the verdict.
@@ -40,7 +40,7 @@ is the served-coding-model tool-tag workaround, **not** a governance doc — do 
   `_scratch/`; you persist ids there only so a chained orchestrator can RE-ATTACH). This is exactly why the
   SERVE DISCIPLINE (§2) requires the `mrefresh-nest-<stage>` job name — a mis-named serve is neither cancelled
   nor re-attached. Never write a step that depends on you cancelling a job.
-- **Do NOT disturb production.** `vllm-qwen35` (0.26.0) + `test` partition ONLY. Never touch `vllm-probe`
+- **Do NOT disturb production.** Serve on `vllm-serve-cu129` (`vllm-qwen35` is CPU arch-dry-run only) + `test` partition ONLY. Never touch `vllm-probe`
   (0.10.2), the live `PHASE1_SERVED` models, or their version-pinned `rate_table` rows. A production default
   flips ONLY behind Gate 3 + a cleared gauntlet.
 - **Git:** branch `milestone/model-refresh`, **NEVER `main`**; **NEVER push to `upstream`** (rcc-uchicago org).
@@ -54,8 +54,9 @@ is the served-coding-model tool-tag workaround, **not** a governance doc — do 
 ## 0.5 Reference fence — verify on disk, do NOT assume from memory
 
 At orient (§1), confirm present + readable before proceeding, then re-verify each acted-on claim:
-- `tools/arch_dryrun.py` (the Gate-0 load-safety probe) and the `vllm-qwen35` env
-  (`/project/rcc/mehta5/conda-envs/vllm-qwen35/bin/python` imports `vllm==0.26.0`).
+- `tools/arch_dryrun.py` (the Gate-0 load-safety probe), the `vllm-serve-cu129` serve env
+  (`/project/rcc/mehta5/conda-envs/vllm-serve-cu129/bin/python` imports `vllm==0.26.0`, `torch.version.cuda==12.9`),
+  and the canonical serve template `tools/serve_cu129.sbatch`.
 - `ai-session/server.py::MODEL_REGISTRY` / `::PHASE1_SERVED` (the service registry you will edit at Gate 3;
   also the set `server.py::_discover_servers_from_squeue` scans — a serve job named `<registry-key>:<port>` is
   surfaced to production clients, so your serve jobs must NOT be named that, see §4);
@@ -64,7 +65,7 @@ At orient (§1), confirm present + readable before proceeding, then re-verify ea
   serves on the FORBIDDEN production 0.10.2 env where the new archs cannot load) and submits its own sbatch
   named `<MODEL_KEY>:<PORT>` (invisible to the orchestrator's `mrefresh-nest*` wait/cancel, surfaced by
   production discovery, and — for the baseline `qwen2.5_coder_32B`, a live registry key — FLOOR-BILLED by
-  `billing_sweep.py::model_key_of`). Read it only to copy the bare `vllm serve` flag list.
+  `billing_sweep.py::model_key_of`). Submit `tools/serve_cu129.sbatch` instead (§2 SERVE DISCIPLINE).
   `billing/rate_table.json` (the version-pinned records — do NOT edit a production row).
 - The staging recipe `sbatch_stage_glm52.sh` (the Xet-disabled download pattern to mirror per candidate).
 - The candidate weights under `models/` (Qwen3.5-122B already staged; `Qwen3-Coder-30B-A3B-Instruct` and
@@ -79,8 +80,8 @@ memory.
 ## 1. Phase 0 — orient + (re)confirm the frozen gates
 
 Each iteration, in parallel: `git status --short`; `git log --oneline -8`; confirm HEAD is on
-`milestone/model-refresh` and carries `prompts/60_model_refresh/session_start.md`. Confirm the `vllm-qwen35`
-env imports `vllm` and that `tools/arch_dryrun.py` runs. Run the reference fence (§0.5). **Sweep `squeue --me`
+`milestone/model-refresh` and carries `prompts/60_model_refresh/session_start.md`. Confirm the `vllm-serve-cu129`
+env imports `vllm` (torch cu129) and that `tools/serve_cu129.sbatch` + `tools/arch_dryrun.py` are present. Run the reference fence (§0.5). **Sweep `squeue --me`
 for any `mrefresh-nest*` job still in flight and RE-ATTACH to it** (read its id from `_scratch/`) rather than
 resubmitting. Read `session_start.md §0–§5` from disk now — the gates are frozen there; do not re-derive them.
 
@@ -103,22 +104,24 @@ serve + CPU score) → **Stage 3 service wiring** (CPU, per tier winner). Candid
   TP=4 in `bin/ai-session::tp_for_model` and `server.py:32`, while FP8 fits TP=2 on 2×H200; Stage 1 confirms,
   Stage 3 reconciles both files) and `deepseek-ai/DeepSeek-V4-Flash`. **V4-Flash caveat (pre-flight NO-GO):**
   its MoE experts are **NVFP4**, and FP4 tensor-core compute is **Blackwell (sm_100+)**; these H200s are
-  **Hopper (sm_90)**. Before staging its ~148 GB, verify in the `vllm-qwen35` env that (i) `DeepseekV4ForCausalLM`
+  **Hopper (sm_90)**. Before staging its ~148 GB, verify in the `vllm-serve-cu129` env that (i) `DeepseekV4ForCausalLM`
   is registered AND (ii) vLLM 0.26.0 actually runs its FP4 quant on sm_90 (not Blackwell-only). If FP4 is
   unsupported on Hopper, V4-Flash is a **clean Gate-1 NO-GO on this cluster — NOT a §9 infra-retry** (do not
   burn 5 H200 reservations on a quant the hardware can't run); record the finding and Tier B decides on
   Qwen3.5-122B alone. Also: `launch_ai_session.sh` has no data-parallel path, so any DP serving is hand-written.
 
 **SERVE DISCIPLINE (every Stage-1/Stage-2 serve, candidate AND baseline — this closes four gauntlet findings):**
-1. **Env:** serve from the **CUDA-12.x rebuild** (per the DRIVER CONSTRAINT below — NOT `vllm-qwen35`, whose
-   torch-2.11/cu130 fails to init CUDA on the current driver 535; `cluster_provenance.md`), and NEVER
-   `launch_ai_session.sh` (it forces the 0.10.2 `vllm-probe` env). The baseline `qwen2.5_coder_32B` is served on
-   the SAME env, so the Gate-2 comparison is same-version/same-env (an env mismatch silently games Gate 2).
+1. **Env:** serve from **`vllm-serve-cu129`** via **`tools/serve_cu129.sbatch`** (per the DRIVER CONSTRAINT
+   below; NOT `vllm-qwen35`, whose cu130 fails to init CUDA on driver 535; `cluster_provenance.md`), and NEVER
+   `launch_ai_session.sh` (it forces the 0.10.2 `vllm-probe` env). The template bakes in the three required env
+   fixes (LD_LIBRARY_PATH / cuda+gcc modules / DeepGEMM-off). The baseline `qwen2.5_coder_32B` is served on the
+   SAME env/template, so the Gate-2 comparison is same-version/same-env (an env mismatch silently games Gate 2).
 2. **Job name:** `--job-name mrefresh-nest-<stage>` so the orchestrator's wait/cancel sees it.
 3. **Served-model-name:** a benchmark-only name that is **NOT a `MODEL_REGISTRY` key** (e.g. `bench-<model>`),
    so production discovery never surfaces it AND `billing_sweep.py::model_key_of` never floor-bills it. The
    baseline serve uses `bench-coder32b`, NOT `qwen2.5_coder_32B` (the live key — which WOULD be swept).
-4. Reuse only the bare `vllm serve` flag list from `launch_ai_session.sh`; write the nested `sbatch` yourself (§4).
+4. Submit `tools/serve_cu129.sbatch` (do NOT hand-roll the env setup — it self-asserts the name/served-name
+   fences and carries the three required env fixes); pass per-candidate knobs via sbatch flags + `--export` (§4).
 
 Baseline to beat at every tier: `qwen2.5_coder_32B`. "Reuse, don't rebuild": `tools/arch_dryrun.py` and the
 `sbatch_stage_glm52.sh` download recipe already exist — extend them.
@@ -160,8 +163,8 @@ This is the operator's load-bearing routing (`session_start.md §0`). Mirror `sc
   out — **`--constraint "A100|a100"` for Tier A** (Slurm features are case-sensitive; bare `A100` matches only 4
   contended nodes, `a100` another ~50) and **`--constraint H200` for Tier B** (uppercase is correct for the
   midway3-0600–0606 H200 nodes) — TP/DP per `session_start.md §2`, **time-boxed** (`--time=00:30:00` smoke /
-  `02:00:00` benchmark), env = the **CUDA-12.x serve rebuild** (per the §2 DRIVER CONSTRAINT — the cluster driver
-  is 535/CUDA-12.2, so `vllm-qwen35`/cu130 fails; `cluster_provenance.md`), the **SERVE DISCIPLINE of §2** (name
+  `02:00:00` benchmark), env = **`vllm-serve-cu129`** via **`tools/serve_cu129.sbatch`** (per the §2 DRIVER
+  CONSTRAINT; the cluster driver is 535/CUDA-12.2, cu129 runs, cu130 fails; `cluster_provenance.md`), the **SERVE DISCIPLINE of §2** (name
   `mrefresh-nest-<stage>`, served-model-name `bench-<model>` NOT a registry key). Run a **fast pre-flight BEFORE
   the full model load** so a doomed reservation fails cheap: `torch.cuda.is_available()` + a tiny fp tensor
   (catches the driver/CUDA gap) + the arch in `ModelRegistry.get_supported_archs()` + **a quant-support probe for
@@ -247,8 +250,9 @@ branch-local interpretation.
 
 ## 9. Blocker protocol
 A genuine blocker — a gate fails after a clean ≤5-attempt re-implementation; the gauntlet surfaces a Critical you
-cannot resolve in scope; a required reference/env/weight is absent (§0.5); a GPU driver gap makes the torch-2.11
-stack unrunnable on the H200 (rebuild-with-cu128 is an operator decision) — **STOP that stage.** Write
+cannot resolve in scope; a required reference/env/weight is absent (§0.5); a candidate needs a CUDA/driver
+feature the H200's driver 535 cannot provide even with the `vllm-serve-cu129` mitigations (DeepGEMM-off;
+`cluster_provenance.md`) — **STOP that stage.** Write
 `prompts/60_model_refresh/blocker.md` with `path::symbol` citations + the failing assertion, commit only that
 (`debug: blocker on <stage>`), fire a `PushNotification`, and either continue to an **independent** stage (Tier A
 and Tier B are independent; the two Tier-B candidates are independent) or stop if all remaining stages depend on

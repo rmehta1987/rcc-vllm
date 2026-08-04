@@ -72,7 +72,18 @@ OWUI_PORT=${OWUI_PORT:-$((3000 + UID_NUM % 90))}
 # so `down` can reap a stray mcpo by port even when the pidfile is gone.
 MCPO_PORT=${MCPO_PORT:-$((OWUI_PORT + 500))}
 export GW_PORT MCPO_PORT
-READY_TIMEOUT=${READY_TIMEOUT:-900}
+# Model-aware default for how long `start` waits for the model to load + compile
+# before giving up. Large models with torch.compile (72B cold start ~13-15min)
+# need well over the old flat 900s, or the wait times out just before READY. An
+# explicit READY_TIMEOUT in the env still wins. (MODEL is resolved above.)
+if [ -z "${READY_TIMEOUT:-}" ]; then
+  case "$MODEL" in
+    qwen3.5_122B|glm5.2_753B)     READY_TIMEOUT=2400 ;;  # 122B+ / MoE on H200
+    qwen2.5_72B|llama3.1_70B)     READY_TIMEOUT=1500 ;;  # 70-72B dense, ~15min cold start
+    qwen2.5_coder_32B|qwen3_32B)  READY_TIMEOUT=1200 ;;  # 32B
+    *)                            READY_TIMEOUT=900  ;;   # small (4b/0.5B)
+  esac
+fi
 # How long to wait for Open WebUI to bind its port before failing `up`. A cold
 # first run (heavy imports + first-run DB migration on NFS, and -- absent a shared
 # cache -- an embedding-model download) can exceed the old hardcoded 180s; make it

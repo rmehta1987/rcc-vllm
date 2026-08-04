@@ -319,7 +319,34 @@ def cmd_start(args) -> int:
     print(f"[start] session file: {path}")
 
     if args.wait:
-        _wait_running_and_ready(session, args.ready_timeout, backend_key)
+        # The job is submitted but not yet READY, and the wrapper's teardown trap
+        # is not armed until this call returns. Any early exit here -- ready-timeout,
+        # Ctrl-C, an SSH drop (SIGHUP), SIGTERM, or an error -- would otherwise leave
+        # the reservation RUNNING and floor-billing as an orphan. Guard the wait and
+        # scancel EXACTLY the job we just submitted (launch['jobid']) on any such
+        # exit: no pre-existing-session ambiguity, since we only touch our own job.
+        import signal
+        def _abort_bringup(signum, _frame):
+            raise SystemExit(f"signal {signum} received while bringing up job {session['jobid']}")
+        _prev_handlers = {sig: signal.getsignal(sig)
+                          for sig in (signal.SIGTERM, signal.SIGHUP)}
+        for sig in _prev_handlers:
+            signal.signal(sig, _abort_bringup)
+        try:
+            _wait_running_and_ready(session, args.ready_timeout, backend_key)
+        except BaseException as exc:
+            jobid = session["jobid"]
+            print(f"[start] bring-up aborted for job {jobid} "
+                  f"({type(exc).__name__}); scancel to avoid an orphaned, "
+                  f"floor-billed reservation.", file=sys.stderr)
+            subprocess.run(["scancel", str(jobid)], check=False)
+            session["status"] = "aborted"
+            _save_session(session)
+            _clear_gateway_if_ours(jobid)
+            raise
+        finally:
+            for sig, handler in _prev_handlers.items():
+                signal.signal(sig, handler)
     else:
         print("[start] not waiting; run `ai_session.py status` to see when it is ready.")
     return 0

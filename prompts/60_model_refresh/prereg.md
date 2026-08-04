@@ -1,7 +1,7 @@
 # Pre-registration of Stage-2 constants — coding-model refresh
 
 Status: PRE-RESULT. No Stage-1 or Stage-2 gate has scored at the time this file is committed. This file is
-written by the constants pilot (`_cluster_autonomous_model_refresh_loop.md` §3; `session_start.md` §3) and
+written by the constants pilot (`session_start.md` §3; loop prompt Phase 0 orient) and
 committed as its OWN commit before the first Stage-1/Stage-2 `mrefresh-nest` job is submitted. The gate formulas
 and fail-branches live in `session_start.md`; this file fixes only the numeric/textual constants those gates
 consume. Nothing here is edited after a gate scores (`git diff --quiet HEAD -- prompts/60_model_refresh/prereg.md`
@@ -153,7 +153,8 @@ unambiguous task, so a serving coding model failing it is a real serve/decode fa
 ## 8. Anti-back-fit protocol (enforced before every Stage-1/Stage-2 scoring run)
 
 Assert, in order (`session_start.md` §3); any failure is a §9 blocker, never a post-hoc edit of this file:
-1. `prompts/60_model_refresh/prereg.md` exists and its first non-empty content line declares `Status: PRE-RESULT`.
+1. `prompts/60_model_refresh/prereg.md` exists and a line matching `^Status: PRE-RESULT` appears in its header
+   (within the first 5 lines) — checked with `grep`, not by assuming it is the first non-empty line (line 1 is the H1 title).
 2. The commit that introduced this file PRECEDES the first Stage-1/Stage-2 `mrefresh-nest` submit timestamp
    recorded in `_scratch/first_scoring_submit.txt` (that timestamp is written only AFTER this commit lands;
    `--is-ancestor` of HEAD is NOT sufficient and is not relied upon).

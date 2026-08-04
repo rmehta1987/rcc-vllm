@@ -22,6 +22,14 @@ runs on the target GPU — that is the Stage-1 pre-flight. FP8-on-Hopper for thi
 exact model is already PROVEN on this env (job 52985604, `cluster_provenance.md`:
 `qwen3_5_moe` FP8/E4M3 at TP=2 loaded 122 GB in 114 s and generated code).
 
+## Gate 0 — Qwen3-Coder-30B-A3B-Instruct (Tier A): PASS
+
+After Stage D completed (below), `tools/arch_dryrun.py
+models/Qwen3-Coder-30B-A3B-Instruct` returned exit 0: `Qwen3MoeForCausalLM` ->
+SUPPORTED, class imports, `Qwen3MoeConfig` parses, `Qwen2Tokenizer` loads
+(vocab ~151643). 16 safetensors shards, 57 GB. Tier A is ready for a Stage-1 A100
+serve (`--constraint "A100|a100" --tp 2`, per `session_start.md §2`).
+
 ## Candidate pre-flight — DeepSeek-V4-Flash: NOT a clean CPU NO-GO (proceeds)
 
 CORRECTION of the first draft of this file (commit 2810f70), which claimed V4-Flash
@@ -97,9 +105,11 @@ Pids/logs persisted to `_scratch/stage_d_tiera.json` and
 its loop exits.
 
 - Tier A: `Qwen/Qwen3-Coder-30B-A3B-Instruct` -> `models/Qwen3-Coder-30B-A3B-Instruct`
-  (16 safetensors shards, ~61 GB).
+  (16 safetensors shards, 57 GB). **Gate D PASS** (stager rc=0, tensor-byte verify
+  rc=0). Stage 0 PASS (above).
 - Tier B: `deepseek-ai/DeepSeek-V4-Flash` -> `models/DeepSeek-V4-Flash`
-  (46 shards, 159.6 GB; FP8 dense + MXFP4 experts).
+  (46 shards, 159.6 GB; FP8 dense + MXFP4 experts). Download in flight; Gate D
+  verified when its loop exits (re-attach via `_scratch/stage_d_tierb_v4.json`).
 
 ## Compute provenance (this stage)
 

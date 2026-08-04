@@ -84,14 +84,49 @@ EAGER_FLAG=""; [ "$EAGER" = "1" ] && EAGER_FLAG="--enforce-eager"
 echo "=== $(date '+%F %T') node $(hostname) serving $SERVED_NAME (TP=$TP eager=$EAGER) ==="
 nvidia-smi --query-gpu=index,name,driver_version,memory.total --format=csv,noheader
 
-exec vllm serve "$MODEL_DIR" \
-  --served-model-name "$SERVED_NAME" \
-  --host 0.0.0.0 \
-  --port "$PORT" \
-  --tensor-parallel-size "$TP" \
-  --trust-remote-code \
-  --enable-prefix-caching \
-  --max-model-len "$MAX_MODEL_LEN" \
-  --gpu-memory-utilization "$GPU_MEM_UTIL" \
-  ${REASONING_FLAG} \
-  ${EAGER_FLAG}
+# Build the serve argv ONCE so the default (pure-serve) path and the SMOKE
+# (co-located accept-check) path below cannot drift. Unquoted ${REASONING_FLAG}/
+# ${EAGER_FLAG} word-split to zero-or-more argv elements exactly as the old
+# backslash-continued form did.
+SERVE_CMD=(vllm serve "$MODEL_DIR"
+  --served-model-name "$SERVED_NAME"
+  --host 0.0.0.0
+  --port "$PORT"
+  --tensor-parallel-size "$TP"
+  --trust-remote-code
+  --enable-prefix-caching
+  --max-model-len "$MAX_MODEL_LEN"
+  --gpu-memory-utilization "$GPU_MEM_UTIL"
+  ${REASONING_FLAG}
+  ${EAGER_FLAG})
+
+if [ "${SMOKE:-0}" != "1" ]; then
+  # Default, PROVEN behavior (jobs 52984938 / 52985604): pure serve; the time-box
+  # terminates it. Byte-identical argv to the pre-SMOKE template.
+  exec "${SERVE_CMD[@]}"
+fi
+
+# --- SMOKE=1: self-contained Stage-1 accept-check (session_start.md §2 Stage 1) --- #
+# The orchestrator only starts the next driver session once NO mrefresh-nest* job is
+# in the queue (run_model_refresh_loop.sbatch wait-loop), so a Stage-1 job must SERVE,
+# self-test, WRITE A VERDICT, and EXIT (not block for the full box). Co-locating client
+# and server on 127.0.0.1 avoids any cross-node HTTP. Fail-cheap pre-flight first, so a
+# doomed reservation dies in seconds instead of after the multi-minute weight load.
+SMOKE_PY="/project/rcc/mehta5/vllm/tools/stage1_smoke.py"
+RESULT_PATH="${RESULT_PATH:-/project/rcc/mehta5/vllm/_scratch/stage1_${SERVED_NAME}.json}"
+mkdir -p "$(dirname "$RESULT_PATH")"
+
+if ! python "$SMOKE_PY" preflight "$MODEL_DIR"; then
+  echo "STAGE1 PREFLIGHT_FAIL for $SERVED_NAME -- not loading weights"
+  python "$SMOKE_PY" writefail "$RESULT_PATH" "$SERVED_NAME" preflight_failed || true
+  exit 0   # leave the queue cleanly; the JSON verdict records the NO-GO
+fi
+
+"${SERVE_CMD[@]}" &
+SERVE_PID=$!
+rc=0
+python "$SMOKE_PY" client "http://127.0.0.1:$PORT" "$SERVED_NAME" "$RESULT_PATH" || rc=$?
+echo "STAGE1 accept-check rc=$rc for $SERVED_NAME"
+kill "$SERVE_PID" 2>/dev/null || true
+wait "$SERVE_PID" 2>/dev/null || true
+exit "$rc"

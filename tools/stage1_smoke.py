@@ -63,8 +63,8 @@ DECODE = {
     "max_tokens": 8192,
     "chat_template_kwargs": {"enable_thinking": False},
 }
-READY_TIMEOUT_S = 1500   # 25 min of the 30-min box for the load; 5 min slack for the check + teardown
-GEN_TIMEOUT_S = 600      # generous read timeout for one completion (greedy, trivial task -> fast)
+READY_TIMEOUT_S = 1200   # fallback ready budget when no absolute SMOKE_DEADLINE_EPOCH is set
+GEN_TIMEOUT_S = 180      # read timeout for one greedy completion (trivial task -> seconds)
 ACCEPT_TIMEOUT_S = 20    # a pathological completion cannot hang the job
 
 
@@ -72,6 +72,41 @@ def _write(result_path, obj):
     os.makedirs(os.path.dirname(os.path.abspath(result_path)), exist_ok=True)
     with open(result_path, "w") as fh:
         json.dump(obj, fh, indent=2)
+
+
+def _hard_deadline():
+    """Absolute epoch deadline the SMOKE sbatch derives from the SBATCH box, so the client
+    ALWAYS writes a verdict and returns before Slurm's wall-clock kill (which would skip the
+    verdict + the graceful serve teardown). None when not launched by the sbatch."""
+    v = os.environ.get("SMOKE_DEADLINE_EPOCH")
+    try:
+        return float(v) if v else None
+    except ValueError:
+        return None
+
+
+def _serve_pid():
+    v = os.environ.get("SMOKE_SERVE_PID")
+    try:
+        return int(v) if v else None
+    except ValueError:
+        return None
+
+
+def _proc_alive(pid):
+    """False only if the serve process is gone or a zombie; any other read outcome returns
+    True so a transient /proc hiccup never false-fails a healthy serve. Lets the client bail
+    within one poll of a serve that crashes on load instead of burning the whole ready box."""
+    if pid is None:
+        return True
+    try:
+        with open(f"/proc/{pid}/stat") as fh:
+            after = fh.read().rsplit(") ", 1)[-1].split()
+        return bool(after) and after[0] not in ("Z", "X", "x")
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
 
 
 # ------------------------------------------------------------------ preflight ---- #
@@ -115,9 +150,16 @@ def preflight(model_dir):
     )
     print(f"quant         : {quant} (device cc {cc})")
     if "fp8" in qs:
+        # FP8 e4m3 tensor-core GEMM is Ada(sm89)/Hopper(sm90)+; on this cluster the FP8
+        # candidates serve on H200 (cc 9.0). A cc floor catches an FP8 model mis-routed to a
+        # pre-Ada GPU (e.g. A100 cc 8.0) cheaply -- a storage-only dtype alloc, which is not
+        # compute-capability-gated, would false-PASS it into the multi-minute weight load.
+        if cc < (8, 9):
+            print(f"PREFLIGHT FAIL: fp8 tensor cores need >= sm89 (Ada/Hopper), have {cc}")
+            return 1
         try:
             _ = torch.zeros(16, device="cuda", dtype=torch.float8_e4m3fn)
-            print("quant_probe   : float8_e4m3fn tensor OK on this GPU")
+            print(f"quant_probe   : float8_e4m3fn tensor OK on this GPU (cc {cc})")
         except Exception as e:  # noqa: BLE001
             print(f"PREFLIGHT FAIL: fp8 dtype -> {type(e).__name__}: {e}")
             return 1
@@ -148,16 +190,18 @@ def _http_post_json(url, payload, timeout=GEN_TIMEOUT_S):
         return r.status, json.loads(r.read())
 
 
-def _wait_ready(base, deadline):
+def _wait_ready(base, deadline, serve_pid):
     while time.time() < deadline:
+        if not _proc_alive(serve_pid):
+            return "dead"   # serve crashed during load -> fail now, do not burn the box
         try:
             st, _ = _http_get(base + "/health", timeout=10)
             if st == 200:
-                return True
+                return "ready"
         except (urllib.error.URLError, ConnectionError, OSError):
             pass  # server not up yet
         time.sleep(10)
-    return False
+    return "timeout"
 
 
 def _extract_code(content):
@@ -200,18 +244,32 @@ def _accept(content):
 
 def client(base_url, served_name, result_path):
     base = base_url.rstrip("/")
-    if not _wait_ready(base, time.time() + READY_TIMEOUT_S):
-        _write(result_path, {"stage": "1", "served_name": served_name, "pass": False,
-                             "reason": f"server not ready within {READY_TIMEOUT_S}s"})
-        print(f"RESULT stage1 {served_name} : FAIL - server not ready")
+    hard = _hard_deadline()
+    serve_pid = _serve_pid()
+    ready_deadline = time.time() + READY_TIMEOUT_S
+    if hard is not None:
+        ready_deadline = min(ready_deadline, hard)
+
+    status = _wait_ready(base, ready_deadline, serve_pid)
+    if status != "ready":
+        reason = {"dead": "server process exited during load",
+                  "timeout": "server not ready before deadline"}[status]
+        _write(result_path, {"stage": "1", "served_name": served_name, "pass": False, "reason": reason})
+        print(f"RESULT stage1 {served_name} : FAIL - {reason}")
         return 1
+
+    # Bound the single completion by whatever the box still allows, so the client always
+    # returns (and writes a verdict) before the SBATCH wall-clock kill.
+    gen_timeout = GEN_TIMEOUT_S
+    if hard is not None:
+        gen_timeout = min(GEN_TIMEOUT_S, max(5.0, hard - time.time()))
 
     payload = {"model": served_name,
                "messages": [{"role": "system", "content": SYS_MSG},
                             {"role": "user", "content": USER_MSG}],
                **DECODE}
     try:
-        st, data = _http_post_json(base + "/v1/chat/completions", payload)
+        st, data = _http_post_json(base + "/v1/chat/completions", payload, timeout=gen_timeout)
     except Exception as e:  # noqa: BLE001
         _write(result_path, {"stage": "1", "served_name": served_name, "pass": False,
                              "reason": f"chat/completions error: {type(e).__name__}: {e}"})
@@ -231,7 +289,10 @@ def client(base_url, served_name, result_path):
 
 
 def writefail(result_path, served_name, reason):
-    _write(result_path, {"stage": "1", "served_name": served_name, "pass": False, "reason": reason})
+    try:
+        _write(result_path, {"stage": "1", "served_name": served_name, "pass": False, "reason": reason})
+    except OSError as e:
+        print(f"writefail: could not write verdict to {result_path}: {e}", file=sys.stderr)
     print(f"RESULT stage1 {served_name} : FAIL - {reason}")
     return 0
 

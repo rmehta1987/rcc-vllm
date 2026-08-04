@@ -122,11 +122,23 @@ if ! python "$SMOKE_PY" preflight "$MODEL_DIR"; then
   exit 0   # leave the queue cleanly; the JSON verdict records the NO-GO
 fi
 
+# Give the client an ABSOLUTE deadline SMOKE_TEARDOWN_S before the SBATCH box ends, so it
+# always writes a verdict and returns before Slurm's wall-clock kill (which would skip the
+# verdict AND the kill/wait teardown). $SECONDS is elapsed-since-job-start, so ($(date +%s)
+# - SECONDS) is the job-start epoch. SMOKE_BOX_S MUST match #SBATCH --time (frozen 00:30:00,
+# prereg.md §7); override only if --time is overridden on the CLI.
+SMOKE_BOX_S="${SMOKE_BOX_S:-1800}"
+SMOKE_TEARDOWN_S="${SMOKE_TEARDOWN_S:-180}"
+export SMOKE_DEADLINE_EPOCH=$(( ($(date +%s) - SECONDS) + SMOKE_BOX_S - SMOKE_TEARDOWN_S ))
+
 "${SERVE_CMD[@]}" &
 SERVE_PID=$!
+export SMOKE_SERVE_PID="$SERVE_PID"   # lets the client fail fast if the serve crashes on load
 rc=0
 python "$SMOKE_PY" client "http://127.0.0.1:$PORT" "$SERVED_NAME" "$RESULT_PATH" || rc=$?
 echo "STAGE1 accept-check rc=$rc for $SERVED_NAME"
+# Best-effort graceful stop; the GUARANTEED backstop is Slurm's cgroup teardown at 'exit',
+# which reclaims the whole TP worker tree regardless of this kill.
 kill "$SERVE_PID" 2>/dev/null || true
 wait "$SERVE_PID" 2>/dev/null || true
 exit "$rc"

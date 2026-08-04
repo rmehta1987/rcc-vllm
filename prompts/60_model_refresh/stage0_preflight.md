@@ -120,11 +120,18 @@ its loop exits.
   (16 safetensors shards, 57 GB). **Gate D PASS** (stager rc=0, tensor-byte verify
   rc=0). Stage 0 PASS (above).
 - Tier B: `deepseek-ai/DeepSeek-V4-Flash` -> `models/DeepSeek-V4-Flash`
-  (46 shards, 159.6 GB; FP8 dense + MXFP4 experts). Download in flight; Gate D
-  verified when its loop exits (re-attach via `_scratch/stage_d_tierb_v4.json`).
+  (46 shards, 159.6 GB; FP8 dense + MXFP4 experts). **Gate D PASS** (46/46 shards
+  present + non-zero, tensor bytes 159 609 485 896 == index `total_size`, 0
+  `.incomplete`). Stage 0 PASS: `DeepseekV4ForCausalLM` -> SUPPORTED, imports,
+  `DeepseekV4Config` parses, tokenizer loads (`TokenizersBackend`, vocab ~128000).
+  Ready for a Stage-1 H200 serve with the §4 quant-support pre-flight.
 
 ## Compute provenance (this stage)
 
-No GPU job. CPU work only: `arch_dryrun.py` (122B), two config-only HF fetches
-(V4-Flash `config.json` + `model.safetensors.index.json`), and a read of the
-installed vLLM 0.26.0 DeepSeek-V4 source, all in the build allocation.
+No GPU job. CPU work only, all in the build allocation: `arch_dryrun.py` on all three
+staged models (122B, Qwen3-Coder-30B-A3B, V4-Flash — all exit 0); two full background
+downloads (Tier-A 57 GB + V4-Flash 149 GiB, both Gate-D PASS); two config-only HF
+fetches (V4-Flash `config.json` + `model.safetensors.index.json`); and a read of the
+installed vLLM 0.26.0 DeepSeek-V4 source. The Wave-A gauntlet (config/billing,
+citations, adversary) cleared with no strikes; V4's Gate-D and Stage-0 use the same
+byte-exact / arch-dryrun mechanisms the adversary independently validated.

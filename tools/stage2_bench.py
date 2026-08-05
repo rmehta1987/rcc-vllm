@@ -16,6 +16,7 @@ from the SBATCH box) guarantees a completions file is written before Slurm's wal
 import concurrent.futures as cf
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -303,7 +304,49 @@ def writefail(result_path, served_name, reason):
     return 0
 
 
+def _serve_sig_from_log(log_text, concurrency):
+    """Parse (served_name, serve_signature) from a serve_cu129.sbatch log, for the ONE-TIME backfill of
+    a gen file written before serve_signature existed (adversary residual on e0f9e4b). Sources are the
+    log's OWN authoritative lines: the banner '=== <ts> node <host> serving <served> (TP=<n> eager=<e>)
+    ===' gives served_name + TP, and the vLLM engine-config line `model='<abs path>'` gives the
+    checkpoint. Returns (served_name, sig) mirroring _serve_signature's shape, or (None, None) if either
+    cannot be parsed (caller fails closed). eager/capacity knobs are excluded, matching _serve_signature."""
+    mb = re.search(r"serving\s+(\S+)\s+\(TP=(\d+)\s+eager=(\d+)\)", log_text)
+    mm = re.search(r"model='(/[^']+)'", log_text)
+    if not mb or not mm:
+        return None, None
+    sig = {"model": os.path.basename(mm.group(1).rstrip("/")), "tp": mb.group(2),
+           "concurrency": concurrency}
+    return mb.group(1), sig
+
+
+def backfill_signature(gen_path, log_path):
+    """One-time migration (adversary residual on e0f9e4b): stamp serve_signature onto a gen file written
+    before serve_signature existed, DERIVED FROM ITS AUTHORITATIVE SERVE LOG, so a later resume enforces
+    the full checkpoint/tp/concurrency match instead of the weaker concurrency-only fallback. Asserts the
+    log's served-name equals the file's; idempotent -- refuses to overwrite an existing signature that
+    DISAGREES (a matching one is a no-op). concurrency comes from the file (what actually ran)."""
+    gen = json.load(open(gen_path))
+    served_file = gen.get("served_name")
+    served_log, sig = _serve_sig_from_log(open(log_path).read(), gen.get("concurrency"))
+    if sig is None:
+        raise SystemExit(f"backfill: could not parse serve config from {log_path}")
+    if served_log != served_file:
+        raise SystemExit(f"backfill: log served-name {served_log!r} != file {served_file!r} -- refusing")
+    existing = gen.get("serve_signature")
+    if existing is not None and existing != sig:
+        raise SystemExit(f"backfill: existing serve_signature {existing} != log-derived {sig} -- refusing")
+    gen["serve_signature"] = sig
+    gen["serve_signature_backfilled_from"] = os.path.basename(log_path)
+    with open(gen_path, "w") as fh:
+        json.dump(gen, fh, indent=2)
+    print(f"BACKFILL {served_file}: serve_signature={sig} from {os.path.basename(log_path)}")
+    return 0
+
+
 def main(argv):
+    if len(argv) == 4 and argv[1] == "backfill-signature":
+        return backfill_signature(argv[2], argv[3])
     if len(argv) == 5 and argv[1] == "client":
         rc = client(argv[2], argv[3], argv[4])
         # The verdict is already on disk. A single request may still be in-flight in a worker thread
@@ -318,6 +361,7 @@ def main(argv):
         return writefail(argv[2], argv[3], argv[4])
     print("usage: stage2_bench.py client <base_url> <served_name> <result_path>", file=sys.stderr)
     print("       stage2_bench.py writefail <result_path> <served_name> <reason>", file=sys.stderr)
+    print("       stage2_bench.py backfill-signature <gen.json> <serve_log>", file=sys.stderr)
     return 2
 
 

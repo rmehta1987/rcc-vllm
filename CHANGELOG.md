@@ -9,8 +9,9 @@
   a clean compilable `two_sum` (HTTP 200, finish_reason=stop). Job mrefresh-nest-stage1
   53069683, served-name `bench-qwen35-122b` (a benchmark-only name, not a MODEL_REGISTRY
   key — no production discovery, no billing sweep). Measurement: FP8 needs only TP=2 on
-  2×H200, not the TP=4 the service currently pins (`bin/ai-session::tp_for_model`,
-  `server.py:32`); Stage 3 reconciles. Raw-code-gen vs the baseline is the next gate.
+  2×H200, not the TP=4 the service currently pins (`bin/ai-session::tp_for_model`, the case
+  arm for `qwen3.5_122B`; `server.py`'s MODEL_REGISTRY entry only mirrors it in a comment);
+  Stage 3 reconciles. Raw-code-gen vs the baseline is the next gate.
 - **DeepSeek-V4-Flash: clean Gate-1 NO-GO on this cluster** (the pre-registered
   fail-branch, `session_start.md` §2). With `--kv-cache-dtype fp8` (its fp8_ds_mla layout
   requires it) the load clears arch and kv-cache and reaches expert quantization, where
@@ -19,7 +20,11 @@
   (`marlin_utils_fp4.py::_repack_marlin_experts`): that kernel's PTX targets a newer CUDA
   toolchain than driver 535 can load. Deterministic — not a §9 infra-retry. Tier B
   proceeds on Qwen3.5-122B alone. Job 53069684; two H200 reservations spent (53061901
-  config gap, 53069684 definitive), no further retries.
+  config gap, 53069684 definitive), no further retries. A speculative Hopper-viable path
+  remains — force the Triton MXFP4 MoE backend (`--kernel-config`) or upgrade the cluster
+  driver/CUDA toolkit — but it is unproven (may hit the same PTX wall, and V4's expert
+  config is untested there) and needs a harness change plus a GPU validation, so it cannot
+  overturn this NO-GO; recorded for a future operator decision.
 
 ### Serve-env hardening (enabling the above)
 

@@ -147,16 +147,43 @@ def _is_real_answer(rec):
     return rec.get("error") is None and rec.get("http_status") == 200
 
 
-def _plan_resume(problems, prior, served_name):
-    """Return (kept, todo): the prior real answers to KEEP and the problems to (re)generate. A prior
-    file is trusted ONLY if it is the SAME served_name AND the SAME frozen subset AND the SAME frozen
-    DECODE -- otherwise everything is regenerated (kept={}), so a stale/foreign file can never leak a
-    completion into a run it does not belong to. Pure (no I/O); unit-tested before any GPU spend."""
+def _serve_signature():
+    """The serving-config knobs that can change an ACCEPTED request's greedy completion, so resume can
+    never silently merge completions from two DIFFERENT configs under one served_name (adversary HIGH
+    strike on 431eaa8): `model` (MODEL_DIR basename = the checkpoint), `tp` (changes the collective
+    reduction order -> can flip a greedy token), and `concurrency` (the batch-composition-variance knob
+    -- Strike 7). Read from the env the sbatch exports (MODEL_DIR, TP via --export=; CONCURRENCY is this
+    client's own knob). Execution/capacity knobs -- EAGER (enforce-eager vs CUDA-graph, replays the same
+    kernels), MAX_MODEL_LEN and GPU_MEM_UTIL (they gate acceptance/KV size, not the tokens of an
+    accepted greedy request) -- do NOT change an accepted completion and are deliberately excluded, so a
+    benign capacity bump does not force a wasteful full regenerate. served_name/subset/decode are matched
+    separately by _plan_resume."""
+    md = os.environ.get("MODEL_DIR", "") or ""
+    return {"model": os.path.basename(md.rstrip("/")) or None,
+            "tp": os.environ.get("TP"),
+            "concurrency": CONCURRENCY}
+
+
+def _plan_resume(problems, prior, served_name, cur_sig):
+    """Return (kept, todo): the prior real answers to KEEP and the problems to (re)generate. A prior file
+    is trusted ONLY when it is provably the SAME benchmark AND the SAME output-determining serving
+    config: matching served_name + frozen subset_sha256 + frozen DECODE + concurrency, AND -- when the
+    prior records a serve_signature (this client or newer) -- a matching signature (checkpoint/tp/
+    concurrency). The concurrency match is enforced even on an OLDER file that predates serve_signature
+    (every harness-written file carries the top-level `concurrency`), which closes the batch-variance
+    path (Strike 7) on EVERY file; for the model/tp of such an older file the resubmit wrapper is the
+    single source of that served_name's checkpoint/tp. Any mismatch, or a stale/foreign/corrupt/FAIL
+    prior, yields kept={} -> regenerate all (fail closed). Pure (no I/O); unit-tested before GPU spend."""
     kept = {}
-    if (isinstance(prior, dict)
-            and prior.get("subset_sha256") == lcb.SUBSET_SHA256
-            and prior.get("served_name") == served_name
-            and prior.get("decode") == lcb.DECODE):
+    ok = (isinstance(prior, dict)
+          and prior.get("subset_sha256") == lcb.SUBSET_SHA256
+          and prior.get("served_name") == served_name
+          and prior.get("decode") == lcb.DECODE
+          and prior.get("concurrency") == cur_sig["concurrency"])
+    sig = prior.get("serve_signature") if isinstance(prior, dict) else None
+    if ok and sig is not None:              # newer file: enforce the full checkpoint/tp/concurrency sig
+        ok = sig == cur_sig
+    if ok:
         kept = {q: r for q, r in (prior.get("completions") or {}).items() if _is_real_answer(r)}
     todo = [p for p in problems if p["question_id"] not in kept]
     return kept, todo
@@ -179,14 +206,18 @@ def client(base_url, served_name, result_path):
     # single-box run; the baseline's identical concurrency-1 decode is untouched, so the head-to-head
     # is not gamed. adjudicate still requires n_infra==0 before Gate 2, so an incomplete resume merely
     # reruns -- it can NEVER pass an incomplete head-to-head. First run (no prior file) -> kept={} ->
-    # a no-op (full 60 generated as before).
+    # a no-op (full 60 generated as before). A prior file is trusted only when its serve_signature
+    # (checkpoint/tp/concurrency) AND concurrency match THIS run's -- so a resubmit that (via a stale
+    # STAGE2_CONCURRENCY or a different MODEL_DIR/TP under the same served_name) used a DIFFERENT config
+    # is rejected and fully regenerated, never silently merged (adversary HIGH strike on 431eaa8).
+    cur_sig = _serve_signature()
     prior = {}
     if os.path.exists(result_path):
         try:
             prior = json.load(open(result_path))
         except (json.JSONDecodeError, OSError, ValueError):
             prior = {}
-    kept, todo = _plan_resume(problems, prior, served_name)
+    kept, todo = _plan_resume(problems, prior, served_name, cur_sig)
     completions = dict(kept)
     print(f"loaded {n} problems; concurrency={CONCURRENCY}; served={served_name}; "
           f"resume_kept={len(kept)}; to_generate={len(todo)}")
@@ -253,6 +284,7 @@ def client(base_url, served_name, result_path):
         "stage": "2-gen", "served_name": served_name, "pass": True,
         "n": n, "n_with_content": n_ok, "n_not_generated": len(not_generated),
         "not_generated": not_generated, "concurrency": CONCURRENCY, "resumed_kept": len(kept),
+        "serve_signature": cur_sig,
         "subset_sha256": lcb.SUBSET_SHA256,
         "subset_content_fingerprint": lcb.subset_content_fingerprint(problems),
         "decode": lcb.DECODE, "completions": completions,

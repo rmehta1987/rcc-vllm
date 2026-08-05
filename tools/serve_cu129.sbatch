@@ -74,6 +74,18 @@ export TMPDIR="/tmp/${USER}_${SLURM_JOB_ID}"
 mkdir -p "$TMPDIR"
 export HF_HOME=/project/rcc/mehta5/hf-cache
 
+# Keep serve-time compile/runtime caches OFF the quota-limited home fileset. A FULL ~ (Midway3-home
+# 35/35G) crashed a Stage-1 load mid-profiling with "[Errno 122] Disk quota exceeded" (job 53061850).
+# vLLM's own cache is multi-GB -> /project (rcc-staff group quota, ~875G free); transient JIT/compile
+# caches -> node-local $TMPDIR (quota-free). HF_HOME is already off home (above).
+export VLLM_CACHE_ROOT=/project/rcc/mehta5/.serve-cache/vllm
+export XDG_CACHE_HOME="$TMPDIR/xdg"
+export TRITON_CACHE_DIR="$TMPDIR/triton"
+export TORCHINDUCTOR_CACHE_DIR="$TMPDIR/inductor"
+export TORCH_EXTENSIONS_DIR="$TMPDIR/torch_ext"
+export TORCH_HOME="$TMPDIR/torch_home"
+mkdir -p "$VLLM_CACHE_ROOT" "$XDG_CACHE_HOME" "$TRITON_CACHE_DIR" "$TORCHINDUCTOR_CACHE_DIR" "$TORCH_EXTENSIONS_DIR" "$TORCH_HOME"
+
 # Qwen3 / Qwen3.5 ship "thinking" ON by default; split it from the answer so the loop's Gate-1
 # accept-check and Gate-2 scoring see the code, not the raw <think> block. Non-Qwen3 models: no-op.
 # NOTE (verified job 52987444): with the parser on, the ANSWER is in the response `content` and the CoT
@@ -82,6 +94,14 @@ export HF_HOME=/project/rcc/mehta5/hf-cache
 REASONING_FLAG=""
 case "$(basename "$MODEL_DIR")" in
   Qwen3*|qwen3*) REASONING_FLAG="--reasoning-parser qwen3" ;;
+esac
+# DeepSeek-V4's fp8_ds_mla attention layout REQUIRES an fp8 kv-cache; with the default (auto) it
+# aborts engine init: "DeepseekV4 fp8_ds_mla layout only supports fp8 kv-cache, got auto" (job
+# 53061901). A model-specific serve REQUIREMENT (like the reasoning-parser), not a decode knob --
+# the frozen DECODE (sampling) is unchanged; only V4 is served in its mandated kv-cache dtype.
+KV_CACHE_FLAG=""
+case "$(basename "$MODEL_DIR")" in
+  *V4-Flash*|*DeepSeek-V4*|*deepseek-v4*) KV_CACHE_FLAG="--kv-cache-dtype fp8" ;;
 esac
 EAGER_FLAG=""; [ "$EAGER" = "1" ] && EAGER_FLAG="--enforce-eager"
 
@@ -102,6 +122,7 @@ SERVE_CMD=(vllm serve "$MODEL_DIR"
   --max-model-len "$MAX_MODEL_LEN"
   --gpu-memory-utilization "$GPU_MEM_UTIL"
   ${REASONING_FLAG}
+  ${KV_CACHE_FLAG}
   ${EAGER_FLAG})
 
 if [ "${SMOKE:-0}" != "1" ] && [ "${BENCH:-0}" != "1" ]; then

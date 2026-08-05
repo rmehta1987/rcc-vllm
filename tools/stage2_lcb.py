@@ -71,7 +71,9 @@ PRELUDE = (
     # TypeError and 2-arg pow would return a float -- silently marking CORRECT answers WRONG, and
     # not symmetrically between models. Import the common math NAMES explicitly, leaving builtin pow.
     "from math import (sqrt, gcd, lcm, factorial, comb, perm, isqrt, floor, ceil, log, log2, log10, "
-    "exp, inf, nan, pi, e, tau, hypot, prod, degrees, radians)\n"
+    "exp, inf, nan, pi, e, tau, hypot, prod, degrees, radians, sin, cos, tan, asin, acos, atan, "
+    "atan2, sinh, cosh, tanh, dist, copysign, fabs, trunc, fmod, modf, remainder, gamma, lgamma, "
+    "erf, erfc, expm1, log1p, cbrt, nextafter)\n"
     "from collections import *\n"
     "from itertools import *\n"
     "from functools import *\n"

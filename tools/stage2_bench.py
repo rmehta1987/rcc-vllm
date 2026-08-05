@@ -25,9 +25,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stage2_lcb as lcb  # noqa: E402
 
 READY_TIMEOUT_S = 1800      # fallback ready budget if no NEST_DEADLINE_EPOCH (large model load)
-GEN_TIMEOUT_S = 300         # per-request read timeout for one greedy completion. MUST stay below the
-                            # teardown margin (sbatch BENCH_TEARDOWN_S 240 + TEARDOWN_S 180 = 420s) so
-                            # a single hung in-flight request cannot push client() past the box kill.
+GEN_TIMEOUT_S = 600         # per-request read-timeout CEILING for one greedy completion. Generous
+                            # enough for a full max_tokens=8192 answer on the slow dense baseline
+                            # (~14 tok/s worst case) so a legit long completion is not truncated and
+                            # scored unsolved (adversary R2). It does NOT threaten the box: each
+                            # request's ACTUAL timeout is re-bounded at its start by the time left to
+                            # gen_deadline (below), and os._exit skips any lingering worker at the end.
 # Default concurrency 1: vLLM greedy under continuous batching is NOT bitwise-deterministic (batch
 # composition changes FP reduction order, occasionally flipping a token), and that variance can differ
 # between the MoE candidate and the dense baseline -- an uncontrolled asymmetry near the +3.0 margin
@@ -95,9 +98,13 @@ def _wait_ready(base, deadline, serve_pid):
     return "timeout"
 
 
-def _gen_one(base, served_name, problem, req_timeout):
-    """Return a completion record for one problem. Any request failure -> empty content (which the
-    scorer counts as unsolved); the error is recorded verbatim so it is diagnosable, never opaque."""
+def _gen_one(base, served_name, problem, gen_deadline):
+    """Return a completion record for one problem. Any request failure -> empty content, recorded with
+    a verbatim error (which the scorer counts as infra-incomplete, not a real unsolved). The read
+    timeout is computed HERE, at the request's actual start, as the smaller of GEN_TIMEOUT_S and the
+    time left to gen_deadline -- so a tail request started near the deadline is auto-bounded and the
+    serial (concurrency-1) loop cannot block past the box waiting on it (adversary R2 / Fence-3)."""
+    req_timeout = max(5.0, min(GEN_TIMEOUT_S, gen_deadline - time.time()))
     messages = lcb.build_messages(problem)
     try:
         st, data = _post_chat(base, served_name, messages, req_timeout)
@@ -151,8 +158,7 @@ def client(base_url, served_name, result_path):
     n = len(problems)
     ex = cf.ThreadPoolExecutor(max_workers=CONCURRENCY)
     try:
-        fut = {ex.submit(_gen_one, base, served_name, p,
-                         min(GEN_TIMEOUT_S, max(5.0, gen_deadline - time.time()))): p["question_id"]
+        fut = {ex.submit(_gen_one, base, served_name, p, gen_deadline): p["question_id"]
                for p in problems}
         for f in cf.as_completed(fut):
             qid = fut[f]
@@ -209,7 +215,15 @@ def writefail(result_path, served_name, reason):
 
 def main(argv):
     if len(argv) == 5 and argv[1] == "client":
-        return client(argv[2], argv[3], argv[4])
+        rc = client(argv[2], argv[3], argv[4])
+        # The verdict is already on disk. A single request may still be in-flight in a worker thread
+        # (cancel_futures cancels only QUEUED work); the normal interpreter-exit join would block up
+        # to GEN_TIMEOUT_S, keeping the sbatch -- and thus the Slurm job -- RUNNING and delaying the
+        # orchestrator's next iteration. os._exit returns immediately, killing that thread with the
+        # process; the sbatch then tears down the serve and the job leaves the queue promptly.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(rc)
     if len(argv) == 5 and argv[1] == "writefail":
         return writefail(argv[2], argv[3], argv[4])
     print("usage: stage2_bench.py client <base_url> <served_name> <result_path>", file=sys.stderr)

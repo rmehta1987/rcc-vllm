@@ -58,10 +58,13 @@ MODEL_REGISTRY = {
 # vllm-serve-cu129 (0.26.0); (2) measure a billing rate_table row with bench_billing.py
 # on that env (the Stage-2 code-gen number is pass@1, NOT a prefill/decode throughput
 # sweep, so it cannot fill a rate row); (3) then add qwen3.5_122B here. Until then, a
-# staff smoke reserves H200 with the constraint spelled out (start defaults to
-# --constraint A100, which would floor-bill on load failure) at the MEASURED TP=2:
-#   ai_session.py start --model qwen3.5_122B --force --tp 2 --constraint H200 \
-#       --account rcc-staff --partition test --time 00:30:00 --wait
+# staff smoke uses the SANCTIONED cu129 serve path -- NOT `ai_session.py start`, which
+# routes through launch_ai_session.sh's hardcoded 0.10.2 env and would floor-bill this
+# doomed load. Submit tools/serve_cu129.sbatch on H200 at the MEASURED TP=2 with a
+# bench-* served-name (invisible to the billing sweep and to production discovery):
+#   sbatch --job-name=mrefresh-nest-serve --constraint=H200 --gres=gpu:2 --time=00:30:00 \
+#     --export=ALL,MODEL_DIR=/project/rcc/mehta5/vllm/models/Qwen3.5-122B-A10B-FP8,\
+#   SERVED_NAME=bench-qwen35-122b,TP=2,PORT=8412 tools/serve_cu129.sbatch
 #
 # glm5.2_753B is registered so the key, rate table, and staging tooling can refer
 # to it, but it cannot be served at all today: 755 GB of FP8 weights exceed one

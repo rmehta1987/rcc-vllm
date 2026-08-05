@@ -81,7 +81,8 @@ pre-registered "keep the baseline" NO-GO, a valid measured finding, not a blocke
 ## 3. OPERATOR-DECISION-PENDING — production cutover of `qwen3.5_122B`
 
 The loop does not flip a production default outside its authority. Two steps remain, both requiring an
-operator decision or a rate re-benchmark the loop must not self-trigger (`session_start.md` §8):
+operator decision or a rate re-benchmark the loop must not self-trigger (the production-default
+fence, `session_start.md` §1):
 
 1. **Route production serving of `qwen3.5_122B` to the 0.26.0 serve env.** The live launcher
    `ai-session/launch_ai_session.sh` hardcodes `ENV_PATH=/project/rcc/mehta5/conda-envs/vllm-probe`

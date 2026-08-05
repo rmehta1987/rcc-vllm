@@ -66,7 +66,12 @@ SYS_MSG = ("You are an expert Python programmer. You will be given a competitive
 # LiveCodeBench call-based runner convention.
 PRELUDE = (
     "import sys, math, collections, itertools, heapq, bisect, functools, re, string, random, io\n"
-    "from math import *\n"
+    # NOT `from math import *`: that binds `pow = math.pow`, shadowing the BUILTIN pow. 3-arg
+    # modular pow(a, b, m) (ubiquitous in these problems: modular inverse, Fermat) would then raise
+    # TypeError and 2-arg pow would return a float -- silently marking CORRECT answers WRONG, and
+    # not symmetrically between models. Import the common math NAMES explicitly, leaving builtin pow.
+    "from math import (sqrt, gcd, lcm, factorial, comb, perm, isqrt, floor, ceil, log, log2, log10, "
+    "exp, inf, nan, pi, e, tau, hypot, prod, degrees, radians)\n"
     "from collections import *\n"
     "from itertools import *\n"
     "from functools import *\n"
@@ -145,6 +150,21 @@ def load_subset(assert_sha=True):
 
 
 # --------------------------------------------------------------- prompt build ----- #
+def subset_content_fingerprint(problems):
+    """A provenance hash over the FULL problem content (statement, starter, func_name, and every
+    public+private test), not just the id set that SUBSET_SHA256 binds (prereg.md §2 hashes ids
+    only). Recorded (non-gating) in the gen/score outputs so a later change to the cached shard's
+    test CONTENT -- which the id-set SHA would not catch -- is detectable after the fact."""
+    import hashlib
+    h = hashlib.sha256()
+    for p in problems:   # already in canonical sorted-id order from load_subset
+        for part in (p["question_id"], p["question_content"], p["starter_code"],
+                     str(p.get("func_name")), json.dumps(p["tests"], sort_keys=True, default=str)):
+            h.update((part or "").encode())
+            h.update(b"\0")
+    return h.hexdigest()
+
+
 def build_messages(problem):
     """The uniform prompt (prereg.md §4): starter-code (functional) vs stdin template."""
     qc = problem["question_content"]
@@ -370,6 +390,21 @@ def _cmd_selftest():
         br = score_one(probs[qid], bad[qid])
         print(f"{qid}: good->{gr['solved']} ({gr['detail']}) | bad->{br['solved']} ({br['detail']})")
         ok = ok and gr["solved"] is True and br["solved"] is False
+
+    # Regression guard for the `from math import *` shadow bug (adversary Strike 1): a completion
+    # using 3-arg modular pow MUST score solved in BOTH the functional and stdin paths. pow(2,10,1000)
+    # = 24. If the PRELUDE ever re-shadows builtin pow with math.pow, these flip to unsolved.
+    pow_func = {"question_id": "_powtest_func", "is_functional": True, "func_name": "modexp",
+                "tests": [{"input": "2\n10\n1000", "output": "24"},
+                          {"input": "3\n5\n7", "output": "5"}]}   # 3^5=243, 243%7=5
+    pow_stdin = {"question_id": "_powtest_stdin", "is_functional": False, "func_name": None,
+                 "tests": [{"input": "2 10 1000", "output": "24"}, {"input": "3 5 7", "output": "5"}]}
+    pf = score_one(pow_func, "class Solution:\n    def modexp(self, a, b, m):\n        return pow(a, b, m)\n")
+    ps = score_one(pow_stdin, "a,b,m=map(int,input().split())\nprint(pow(a,b,m))\n")
+    print(f"pow-regression: functional->{pf['solved']} ({pf['detail']}) | stdin->{ps['solved']} ({ps['detail']})")
+    ok = ok and pf["solved"] is True and ps["solved"] is True
+
+    print("subset content fingerprint:", subset_content_fingerprint(list(probs.values()))[:16], "...")
     print("SELFTEST", "PASS" if ok else "FAIL")
     return 0 if ok else 1
 

@@ -25,8 +25,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stage2_lcb as lcb  # noqa: E402
 
 READY_TIMEOUT_S = 1800      # fallback ready budget if no NEST_DEADLINE_EPOCH (large model load)
-GEN_TIMEOUT_S = 600         # per-request read timeout for one greedy completion
-CONCURRENCY = int(os.environ.get("STAGE2_CONCURRENCY", "8"))
+GEN_TIMEOUT_S = 300         # per-request read timeout for one greedy completion. MUST stay below the
+                            # teardown margin (sbatch BENCH_TEARDOWN_S 240 + TEARDOWN_S 180 = 420s) so
+                            # a single hung in-flight request cannot push client() past the box kill.
+# Default concurrency 1: vLLM greedy under continuous batching is NOT bitwise-deterministic (batch
+# composition changes FP reduction order, occasionally flipping a token), and that variance can differ
+# between the MoE candidate and the dense baseline -- an uncontrolled asymmetry near the +3.0 margin
+# (adversary Strike 7). Serial generation removes cross-request batch-composition variance and is
+# applied identically to both models; it still fits the 02:00:00 box for a 60-problem run. Override
+# with STAGE2_CONCURRENCY only for a deliberately faster, less-reproducible run.
+CONCURRENCY = int(os.environ.get("STAGE2_CONCURRENCY", "1"))
 TEARDOWN_S = 180            # stop generating this long before the box end, leaving time to write
 
 
@@ -141,12 +149,11 @@ def client(base_url, served_name, result_path):
     gen_deadline = (hard - TEARDOWN_S) if hard is not None else (time.time() + 3600)
     completions = {}
     n = len(problems)
-    with cf.ThreadPoolExecutor(max_workers=CONCURRENCY) as ex:
-        fut = {}
-        for p in problems:
-            req_timeout = GEN_TIMEOUT_S
-            fut[ex.submit(_gen_one, base, served_name, p,
-                          min(GEN_TIMEOUT_S, max(5.0, gen_deadline - time.time())))] = p["question_id"]
+    ex = cf.ThreadPoolExecutor(max_workers=CONCURRENCY)
+    try:
+        fut = {ex.submit(_gen_one, base, served_name, p,
+                         min(GEN_TIMEOUT_S, max(5.0, gen_deadline - time.time()))): p["question_id"]
+               for p in problems}
         for f in cf.as_completed(fut):
             qid = fut[f]
             try:
@@ -160,19 +167,34 @@ def client(base_url, served_name, result_path):
             if time.time() >= gen_deadline:
                 print("hit generation deadline; recording remaining as not-generated")
                 break
+    finally:
+        # Do NOT block on a normal `with` exit (shutdown(wait=True)): it would drain running AND
+        # still-queued futures, so on a slow/wedged server client() could return only AFTER the box
+        # kill -> no verdict written (config-reviewer Fence-3 High). Cancel queued work and return.
+        ex.shutdown(wait=False, cancel_futures=True)
+
+    # Distinguish infra-incompleteness (never generated before the deadline) from a real empty answer
+    # (the model returned no code) -- the former compromises the head-to-head (adversary Strike 6),
+    # the latter is a legitimate unsolved. adjudicate refuses a run with any not-generated problem.
+    not_generated = []
     for p in problems:
-        completions.setdefault(p["question_id"],
-                               {"content": None, "finish_reason": None, "http_status": None,
-                                "error": "not generated before deadline"})
+        if p["question_id"] not in completions:
+            completions[p["question_id"]] = {"content": None, "finish_reason": None,
+                                             "http_status": None, "error": "not generated before deadline"}
+        if completions[p["question_id"]].get("error") == "not generated before deadline":
+            not_generated.append(p["question_id"])
 
     n_ok = sum(1 for c in completions.values() if c.get("content"))
     _write(result_path, {
         "stage": "2-gen", "served_name": served_name, "pass": True,
-        "n": n, "n_with_content": n_ok, "concurrency": CONCURRENCY,
-        "subset_sha256": lcb.SUBSET_SHA256, "decode": lcb.DECODE,
-        "completions": completions,
+        "n": n, "n_with_content": n_ok, "n_not_generated": len(not_generated),
+        "not_generated": not_generated, "concurrency": CONCURRENCY,
+        "subset_sha256": lcb.SUBSET_SHA256,
+        "subset_content_fingerprint": lcb.subset_content_fingerprint(problems),
+        "decode": lcb.DECODE, "completions": completions,
     })
-    print(f"RESULT stage2-gen {served_name} : wrote {n} completions ({n_ok} non-empty) -> {result_path}")
+    print(f"RESULT stage2-gen {served_name} : wrote {n} completions ({n_ok} non-empty, "
+          f"{len(not_generated)} not-generated) -> {result_path}")
     return 0
 
 

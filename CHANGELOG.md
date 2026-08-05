@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased — model-refresh (branch milestone/model-refresh)
+
+### Tier B Stage 1 (serves) — measured 2026-08-05, vLLM 0.26.0 (vllm-serve-cu129), H200 driver 535.216.03
+
+- **Qwen3.5-122B-A10B-FP8: Gate-1 PASS.** Serves on 2×H200 at TP=2 (FP8), 58.24 GiB
+  weight/GPU plus 62.89 GiB KV cache, engine init 76 s; a text-only code prompt returns
+  a clean compilable `two_sum` (HTTP 200, finish_reason=stop). Job mrefresh-nest-stage1
+  53069683, served-name `bench-qwen35-122b` (a benchmark-only name, not a MODEL_REGISTRY
+  key — no production discovery, no billing sweep). Measurement: FP8 needs only TP=2 on
+  2×H200, not the TP=4 the service currently pins (`bin/ai-session::tp_for_model`,
+  `server.py:32`); Stage 3 reconciles. Raw-code-gen vs the baseline is the next gate.
+- **DeepSeek-V4-Flash: clean Gate-1 NO-GO on this cluster** (the pre-registered
+  fail-branch, `session_start.md` §2). With `--kv-cache-dtype fp8` (its fp8_ds_mla layout
+  requires it) the load clears arch and kv-cache and reaches expert quantization, where
+  the NVFP4 experts resolve to the Marlin MXFP4 MoE backend (Hopper has no FP4 tensor
+  cores) and the Marlin FP4 repack aborts with `cudaErrorUnsupportedPtxVersion`
+  (`marlin_utils_fp4.py::_repack_marlin_experts`): that kernel's PTX targets a newer CUDA
+  toolchain than driver 535 can load. Deterministic — not a §9 infra-retry. Tier B
+  proceeds on Qwen3.5-122B alone. Job 53069684; two H200 reservations spent (53061901
+  config gap, 53069684 definitive), no further retries.
+
+### Serve-env hardening (enabling the above)
+
+- `tools/serve_cu129.sbatch`: redirect all serve-time caches off the quota-limited home
+  fileset (vLLM cache to /project; XDG/Triton/Inductor/Torch/FlashInfer to node-local
+  $TMPDIR) after a full home crashed a 122B load with `[Errno 122] Disk quota exceeded`;
+  auto-add `--kv-cache-dtype fp8` for DeepSeek-V4* model dirs. Frozen DECODE unchanged;
+  billing-floor, production, and time-box fences intact (commits 0ced4b0, 67e432e).
+
 ## 2026-07-09 — consistency-audit fixes (four-way adversarial review)
 
 ### Correctness (Tier 1)

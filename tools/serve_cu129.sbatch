@@ -84,7 +84,11 @@ export TRITON_CACHE_DIR="$TMPDIR/triton"
 export TORCHINDUCTOR_CACHE_DIR="$TMPDIR/inductor"
 export TORCH_EXTENSIONS_DIR="$TMPDIR/torch_ext"
 export TORCH_HOME="$TMPDIR/torch_home"
-mkdir -p "$VLLM_CACHE_ROOT" "$XDG_CACHE_HOME" "$TRITON_CACHE_DIR" "$TORCHINDUCTOR_CACHE_DIR" "$TORCH_EXTENSIONS_DIR" "$TORCH_HOME"
+# FlashInfer derives ALL its JIT/cubin/cache dirs from FLASHINFER_WORKSPACE_BASE (env.py:52,
+# default $HOME); it does NOT honor XDG. Without this its sm_90a JIT .so would still land on home
+# -> the one remaining serve-time home write. Node-local, quota-free, per-job (recompiles cheaply).
+export FLASHINFER_WORKSPACE_BASE="$TMPDIR/flashinfer"
+mkdir -p "$VLLM_CACHE_ROOT" "$XDG_CACHE_HOME" "$TRITON_CACHE_DIR" "$TORCHINDUCTOR_CACHE_DIR" "$TORCH_EXTENSIONS_DIR" "$TORCH_HOME" "$FLASHINFER_WORKSPACE_BASE"
 
 # Qwen3 / Qwen3.5 ship "thinking" ON by default; split it from the answer so the loop's Gate-1
 # accept-check and Gate-2 scoring see the code, not the raw <think> block. Non-Qwen3 models: no-op.

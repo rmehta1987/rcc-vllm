@@ -29,7 +29,7 @@ MODEL_REGISTRY = {
     "qwen2.5_coder_32B": f"{MODELS_ROOT}/Qwen2.5-Coder-32B-Instruct",  # coding model (TP=2 footprint)
     "qwen3_4b": f"{MODELS_ROOT}/Qwen3-4B",                  # single-GPU benchmark anchor
     "qwen3_32B": f"{MODELS_ROOT}/Qwen3-32B",               # thinking model (BF16, TP=2 A100)
-    "qwen3.5_122B": f"{MODELS_ROOT}/Qwen3.5-122B-A10B-FP8", # MoE, native FP8 -- needs H200 (TP=4)
+    "qwen3.5_122B": f"{MODELS_ROOT}/Qwen3.5-122B-A10B-FP8", # MoE, native FP8 -- serves TP=2 on 2xH200 (measured, job 53069683)
     "glm5.2_753B": f"{MODELS_ROOT}/GLM-5.2-FP8",            # MoE 753B, native FP8 -- needs 2+ H200 nodes; see note below
     "llama3.1_70B": f"{MODELS_ROOT}/Meta-Llama-3.1-70B-Instruct",  # served, behind a license ack
     "qwen2.5_0.5B": f"{MODELS_ROOT}/Qwen2.5-0.5B-Instruct", # smoke test only -- never a billing ref
@@ -42,15 +42,26 @@ MODEL_REGISTRY = {
 # to any user but gated behind a one-time license acknowledgment (see _LICENSE_GATED
 # in ai_session.py). Floors bill on GPU tier like every other model.
 #
-# qwen3.5_122B is registered but deliberately NOT here yet: it is a native-FP8 MoE
-# that requires H200 (FP8 needs Hopper) and has not been smoke-tested on this
-# cluster. NOTE: the H200 pin lives in `bin/ai-session` (constraint_for_model), NOT
-# in the launcher -- and `ai_session.py start` defaults to --constraint A100, so a
-# bare `start --force` would reserve an A100, fail on load, and still bill the
-# floor. Smoke-test with the constraint spelled out:
-#   ai_session.py start --model qwen3.5_122B --force --tp 4 --constraint H200 \
+# qwen3.5_122B is VALIDATED but deliberately NOT in PHASE1_SERVED yet -- what remains
+# is a production cutover only the operator can decide, NOT a missing smoke test. The
+# model-refresh loop (branch milestone/model-refresh, 2026-08-05) proved it end to end
+# on the vllm-serve-cu129 env (vLLM 0.26.0, cu129): Gate-1 job 53069683 served it FP8
+# TP=2 on 2xH200 (driver 535.216.03) with a clean code completion, and Gate-2 chose it
+# as the Tier-B (H200) coding winner over qwen2.5_coder_32B on a frozen LiveCodeBench
+# subset (45.0 vs 26.7 pass@1, +18.33 pts). It STILL cannot be added here safely because
+# the production serve path (launch_ai_session.sh) hardcodes ENV_PATH to the 0.10.2
+# vllm-probe env, where Qwen3_5MoeForConditionalGeneration does not load -- a bare add
+# would let a user reserve 2xH200, fail on load, and floor-bill (the job name
+# qwen3.5_122B:port is swept by billing_sweep.py::model_key_of). The remaining steps are
+# operator decisions (runbook in prompts/60_model_refresh/verdict.md, flagged
+# OPERATOR-DECISION-PENDING): (1) route production serving of this model to
+# vllm-serve-cu129 (0.26.0); (2) measure a billing rate_table row with bench_billing.py
+# on that env (the Stage-2 code-gen number is pass@1, NOT a prefill/decode throughput
+# sweep, so it cannot fill a rate row); (3) then add qwen3.5_122B here. Until then, a
+# staff smoke reserves H200 with the constraint spelled out (start defaults to
+# --constraint A100, which would floor-bill on load failure) at the MEASURED TP=2:
+#   ai_session.py start --model qwen3.5_122B --force --tp 2 --constraint H200 \
 #       --account rcc-staff --partition test --time 00:30:00 --wait
-# Add it here once a session loads and answers cleanly on H200.
 #
 # glm5.2_753B is registered so the key, rate table, and staging tooling can refer
 # to it, but it cannot be served at all today: 755 GB of FP8 weights exceed one

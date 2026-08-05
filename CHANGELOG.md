@@ -2,6 +2,43 @@
 
 ## Unreleased — model-refresh (branch milestone/model-refresh)
 
+### Stage 3 (service wiring, Gate 3) — Tier-B winner wired branch-local; production cutover deferred to operator (2026-08-05)
+
+Wires the measured Tier-B result into the service on the branch and hands the one step the
+loop must not self-trigger to the operator. No production default is flipped.
+
+- **Registry / TP reconciliation.** `server.py`'s `qwen3.5_122B` comment now records the
+  validated state (Gate-1 job 53069683: serves FP8 **TP=2** on 2×H200 under vLLM 0.26.0;
+  Gate-2 Tier-B coding winner) in place of the stale "not smoke-tested" note, and the TP
+  pin is corrected from 4 to the measured **2** in `bin/ai-session::tp_for_model` and the
+  inline `MODEL_REGISTRY` comment. FP8 fits TP=2 on 2×H200, so a staff smoke reserves two
+  GPUs, not four. No production-served model's config changes — only the not-yet-served
+  122B (`qwen2.5_72B` and `llama3.1_70B` stay at TP=4).
+- **Docs.** `docs/reference.md` no longer lists the 122B as "smoke test pending"; it is
+  validated on H200 and the measured Tier-B coding winner, with the production cutover
+  marked operator-pending (model table, prose, and capability-frame marker).
+- **Kept baseline at Tier A.** Per the Stage-2 NO-GO, `qwen2.5_coder_32B` remains the
+  Tier-A (A100) coding model; nothing is rewired there.
+- **Verdict.** `prompts/60_model_refresh/verdict.md` records the per-stage outcomes, the
+  honest measured numbers, and a compute-provenance table for every `mrefresh-nest*` job.
+
+**OPERATOR-DECISION-PENDING — production cutover of `qwen3.5_122B` (why the loop stops here).**
+Adding `qwen3.5_122B` to `PHASE1_SERVED` and giving it a billing `rate_table` row is
+deliberately NOT done — both would be unsafe or dishonest from inside the loop:
+  1. The production launcher (`launch_ai_session.sh`) hardcodes the 0.10.2 `vllm-probe`
+     serving env, where `Qwen3_5MoeForConditionalGeneration` does not load. Adding the key
+     to `PHASE1_SERVED` today would let a user reserve 2×H200, fail on load, and **floor-bill**
+     (the job name `qwen3.5_122B:port` is swept by `billing_sweep.py::model_key_of`). A safe
+     flip first requires routing production serving of this model to the `vllm-serve-cu129`
+     (0.26.0) env — a production-runtime change outside the loop's authority.
+  2. A `rate_table` row is the billing source of truth (prefill/decode throughput measured
+     by `bench_billing.py` on the serve env). The Stage-2 measurement is **pass@1** at
+     concurrency 1, not a throughput sweep, so it cannot fill a row — inventing one would be
+     a fabricated billing number (forbidden). A valid row needs a `bench_billing.py` run on
+     the 0.26.0 serve env (a rate re-benchmark), which the loop must not self-trigger.
+The operator runbook is in `prompts/60_model_refresh/verdict.md`. Until it is done, the
+branch leaves `PHASE1_SERVED` and `rate_table.json` untouched.
+
 ### Tier A & B Stage 2 (raw code-gen, Gate 2) — measured 2026-08-05, frozen 60-problem LiveCodeBench subset
 
 Greedy pass@1 head-to-head against the incumbent `qwen2.5_coder_32B` (Qwen2.5-Coder-32B-Instruct,

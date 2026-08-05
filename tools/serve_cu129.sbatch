@@ -104,10 +104,52 @@ SERVE_CMD=(vllm serve "$MODEL_DIR"
   ${REASONING_FLAG}
   ${EAGER_FLAG})
 
-if [ "${SMOKE:-0}" != "1" ]; then
+if [ "${SMOKE:-0}" != "1" ] && [ "${BENCH:-0}" != "1" ]; then
   # Default, PROVEN behavior (jobs 52984938 / 52985604): pure serve; the time-box
   # terminates it. Byte-identical argv to the pre-SMOKE template.
   exec "${SERVE_CMD[@]}"
+fi
+
+# --- BENCH=1: Stage-2 raw-code-gen over the frozen 60-problem LCB subset ---------- #
+# Same co-located client/server pattern as SMOKE (serve on 127.0.0.1, generate, WRITE a
+# completions file, EXIT before the box kill so the orchestrator's mrefresh-nest* wait-loop
+# advances). GENERATION ONLY -- scoring is CPU work on caslake (session_start.md §4). The
+# baseline (bench-coder32b) and every candidate run this SAME path -> uniform env/decode/harness.
+if [ "${BENCH:-0}" = "1" ]; then
+  SMOKE_PY="/project/rcc/mehta5/vllm/tools/stage1_smoke.py"   # reuse the fail-cheap preflight
+  BENCH_PY="/project/rcc/mehta5/vllm/tools/stage2_bench.py"
+  RESULT_PATH="${RESULT_PATH:-/project/rcc/mehta5/vllm/_scratch/stage2_gen_${SERVED_NAME}.json}"
+  mkdir -p "$(dirname "$RESULT_PATH")"
+
+  # Fail-cheap pre-flight BEFORE the multi-minute weight load, so a doomed reservation dies in
+  # seconds (session_start.md §4). Bounded so an interruptible GPU hang still yields a verdict.
+  if ! timeout -k 30 420 python "$SMOKE_PY" preflight "$MODEL_DIR"; then
+    echo "STAGE2 PREFLIGHT_FAIL/timeout for $SERVED_NAME -- not loading weights"
+    timeout 30 python "$BENCH_PY" writefail "$RESULT_PATH" "$SERVED_NAME" preflight_failed_or_timeout || true
+    exit 0
+  fi
+
+  # Absolute client deadline = BENCH_TEARDOWN_S before the job's REAL box end (derived from Slurm's
+  # own EndTime, robust to ANY --time; fall back to the frozen 02:00:00 box + $SECONDS otherwise).
+  BENCH_TEARDOWN_S="${BENCH_TEARDOWN_S:-240}"
+  BENCH_BOX_S="${BENCH_BOX_S:-7200}"   # fallback box only (02:00:00, prereg.md §7)
+  _end_iso="$(timeout 15 scontrol show job "${SLURM_JOB_ID:-0}" 2>/dev/null | grep -oP 'EndTime=\K\S+' || true)"
+  _end_epoch="$(date -d "${_end_iso:-invalid}" +%s 2>/dev/null || true)"
+  if [ -n "${_end_epoch:-}" ]; then
+    export NEST_DEADLINE_EPOCH=$(( _end_epoch - BENCH_TEARDOWN_S ))
+  else
+    export NEST_DEADLINE_EPOCH=$(( ($(date +%s) - SECONDS) + BENCH_BOX_S - BENCH_TEARDOWN_S ))
+  fi
+
+  "${SERVE_CMD[@]}" &
+  SERVE_PID=$!
+  export NEST_SERVE_PID="$SERVE_PID"
+  rc=0
+  python "$BENCH_PY" client "http://127.0.0.1:$PORT" "$SERVED_NAME" "$RESULT_PATH" || rc=$?
+  echo "STAGE2 bench rc=$rc for $SERVED_NAME"
+  kill "$SERVE_PID" 2>/dev/null || true
+  wait "$SERVE_PID" 2>/dev/null || true
+  exit "$rc"
 fi
 
 # --- SMOKE=1: self-contained Stage-1 accept-check (session_start.md §2 Stage 1) --- #

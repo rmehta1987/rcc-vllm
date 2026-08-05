@@ -18,7 +18,6 @@ loads on a CPU caslake node and inside the serve env alike.
 """
 import ast
 import base64
-import io
 import json
 import os
 import pickle
@@ -267,33 +266,32 @@ def _run_functional(code, func_name, tests):
 
 
 def _run_stdin(code, tests):
-    """For each test, exec the program fresh with stdin bound to the test input and stdout captured,
-    under a per-test alarm; compare normalized stdout to expected (prereg.md §4). Short-circuits."""
-    compiled = PRELUDE + "\n" + code
-    for i, t in enumerate(tests):
-        stdin_str, expected = t["input"], t["output"]
-        out = io.StringIO()
-
-        def _do():
-            old_in, old_out = sys.stdin, sys.stdout
-            sys.stdin, sys.stdout = io.StringIO(stdin_str), out
+    """Run the program as a REAL subprocess per test with the test input piped to stdin, comparing
+    normalized stdout to expected (prereg.md §4). A real process (not an in-proc StringIO) is more
+    faithful: competitive-programming fast-IO templates use `sys.stdin.buffer.readline`, which a
+    StringIO stdin lacks; the subprocess also gives a hard per-test timeout and full isolation.
+    Short-circuits on the first failing test (SOLVED iff ALL pass)."""
+    src = PRELUDE + "\n" + code
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as fh:
+        fh.write(src)
+        solpath = fh.name
+    try:
+        for i, t in enumerate(tests):
             try:
-                g = {"__name__": "__main__"}
-                try:
-                    exec(compiled, g)
-                except SystemExit:      # program called exit()/sys.exit() -- normal for CP stdin code
-                    pass
-            finally:
-                sys.stdin, sys.stdout = old_in, old_out
+                p = subprocess.run([sys.executable, solpath], input=t["input"],
+                                   capture_output=True, text=True, timeout=PER_TEST_TIMEOUT_S)
+            except subprocess.TimeoutExpired:
+                return False, f"test {i}: timeout (> {PER_TEST_TIMEOUT_S}s)"
+            except Exception as e:  # noqa: BLE001
+                return False, f"test {i}: {type(e).__name__}: {e}"
+            if _norm_stdout(p.stdout) != _norm_stdout(t["output"]):
+                return False, (f"test {i}: wrong output (got {repr(_norm_stdout(p.stdout))[:120]} "
+                               f"want {repr(_norm_stdout(t['output']))[:120]})")
+    finally:
         try:
-            _with_alarm(PER_TEST_TIMEOUT_S, _do)
-        except _Timeout:
-            return False, f"test {i}: timeout (> {PER_TEST_TIMEOUT_S}s)"
-        except Exception as e:  # noqa: BLE001
-            return False, f"test {i}: {type(e).__name__}: {e}"
-        if _norm_stdout(out.getvalue()) != _norm_stdout(expected):
-            return False, (f"test {i}: wrong output (got {repr(_norm_stdout(out.getvalue()))[:120]} "
-                           f"want {repr(_norm_stdout(expected))[:120]})")
+            os.unlink(solpath)
+        except OSError:
+            pass
     return True, f"all {len(tests)} tests pass"
 
 

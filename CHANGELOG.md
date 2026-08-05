@@ -33,6 +33,16 @@ within binomial noise (SE ≈ 6 pts near p=0.4). Tier B's +18.33 is far outside 
 (fair to the baseline) and skews hard, so absolute pass rates are low for all models — but the
 COMPARISON is controlled by construction (same subset, decode, harness, and serve env/version).
 
+Hardware/quant asymmetry (Tier B only, architecturally forced — not in `prereg.md`, disclosed here):
+the Tier-B candidate is served on 2×H200 (FP8) because Qwen3.5-122B does not fit the A100/BF16 tier,
+while the single shared incumbent baseline was measured on A100 (BF16). So the Tier-B head-to-head
+compares each model on the hardware it would actually be served on (deployment-realistic), not on
+identical silicon; Tier A is fully hardware-matched (candidate and baseline both A100/BF16). This is
+implausible as the driver of the +18.33 result — the gap is 11 problems with the baseline solving
+0/30 hard (a capability gap), far beyond any cross-GPU/quant numerics effect, which shifts at most
+~1 greedy problem. An H200-served baseline was not separately measured (out of loop scope; an
+operator wanting silicon-matched Tier-B numbers can commission one).
+
 ### Tier B Stage 1 (serves) — measured 2026-08-05, vLLM 0.26.0 (vllm-serve-cu129), H200 driver 535.216.03
 
 - **Qwen3.5-122B-A10B-FP8: Gate-1 PASS.** Serves on 2×H200 at TP=2 (FP8), 58.24 GiB

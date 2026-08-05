@@ -134,50 +134,108 @@ def _write(result_path, obj):
         print(f"could not write completions to {result_path}: {e}", file=sys.stderr)
 
 
+def _is_real_answer(rec):
+    """A prior completion worth KEEPING on resume: a content-bearing answer, OR a legitimate HTTP-200
+    empty answer (the model genuinely returned no code -- a real unsolved, error is None). NOT an infra
+    failure (deadline-skip / read-timeout / HTTP error / request exception), which must be regenerated.
+    Mirrors the scorer's n_infra rule EXACTLY (stage2_score.py: `gen_error and not has_content`) so a
+    problem is regenerated iff the scorer would have voided the gate on it."""
+    if not isinstance(rec, dict):
+        return False
+    if rec.get("content"):
+        return True
+    return rec.get("error") is None and rec.get("http_status") == 200
+
+
+def _plan_resume(problems, prior, served_name):
+    """Return (kept, todo): the prior real answers to KEEP and the problems to (re)generate. A prior
+    file is trusted ONLY if it is the SAME served_name AND the SAME frozen subset AND the SAME frozen
+    DECODE -- otherwise everything is regenerated (kept={}), so a stale/foreign file can never leak a
+    completion into a run it does not belong to. Pure (no I/O); unit-tested before any GPU spend."""
+    kept = {}
+    if (isinstance(prior, dict)
+            and prior.get("subset_sha256") == lcb.SUBSET_SHA256
+            and prior.get("served_name") == served_name
+            and prior.get("decode") == lcb.DECODE):
+        kept = {q: r for q, r in (prior.get("completions") or {}).items() if _is_real_answer(r)}
+    todo = [p for p in problems if p["question_id"] not in kept]
+    return kept, todo
+
+
 def client(base_url, served_name, result_path):
     base = base_url.rstrip("/")
     hard = _deadline()
     serve_pid = _serve_pid()
     problems = lcb.load_subset()   # asserts SUBSET_SHA256 (prereg.md §2) before any generation
-    print(f"loaded {len(problems)} problems; concurrency={CONCURRENCY}; served={served_name}")
-
-    ready_deadline = time.time() + READY_TIMEOUT_S
-    if hard is not None:
-        ready_deadline = min(ready_deadline, hard - TEARDOWN_S)
-    status = _wait_ready(base, ready_deadline, serve_pid)
-    if status != "ready":
-        reason = {"dead": "server process exited during load",
-                  "timeout": "server not ready before deadline"}[status]
-        _write(result_path, {"stage": "2-gen", "served_name": served_name, "pass": False,
-                             "reason": reason, "completions": {}})
-        print(f"RESULT stage2-gen {served_name} : FAIL - {reason}")
-        return 1
-
-    gen_deadline = (hard - TEARDOWN_S) if hard is not None else (time.time() + 3600)
-    completions = {}
     n = len(problems)
-    ex = cf.ThreadPoolExecutor(max_workers=CONCURRENCY)
-    try:
-        fut = {ex.submit(_gen_one, base, served_name, p, gen_deadline): p["question_id"]
-               for p in problems}
-        for f in cf.as_completed(fut):
-            qid = fut[f]
-            try:
-                completions[qid] = f.result()
-            except Exception as e:  # noqa: BLE001
-                completions[qid] = {"content": None, "finish_reason": None,
-                                    "http_status": None, "error": f"future error: {e}"}
-            done = len(completions)
-            if done % 10 == 0 or done == n:
-                print(f"  generated {done}/{n} ({int(gen_deadline - time.time())}s to deadline)")
-            if time.time() >= gen_deadline:
-                print("hit generation deadline; recording remaining as not-generated")
-                break
-    finally:
-        # Do NOT block on a normal `with` exit (shutdown(wait=True)): it would drain running AND
-        # still-queued futures, so on a slow/wedged server client() could return only AFTER the box
-        # kill -> no verdict written (config-reviewer Fence-3 High). Cancel queued work and return.
-        ex.shutdown(wait=False, cancel_futures=True)
+
+    # RESUME across successive same-decode boxes -- the concurrency-1 completion path for a large/slow
+    # model that cannot finish all 60 in ONE 02:00:00 box. A re-submit of the SAME job (same
+    # served_name -> same default RESULT_PATH) loads the prior file, KEEPS every real answer
+    # (content-bearing, or a legit HTTP-200 empty), and regenerates ONLY the infra-incomplete problems
+    # (deadline-skip, read-timeout, HTTP error). Every kept AND new completion is still produced
+    # serially at batch size 1, so NO batch-composition variance is introduced (adversary Strike 7 --
+    # the reason CONCURRENCY defaults to 1) and each problem's greedy completion is identical to a
+    # single-box run; the baseline's identical concurrency-1 decode is untouched, so the head-to-head
+    # is not gamed. adjudicate still requires n_infra==0 before Gate 2, so an incomplete resume merely
+    # reruns -- it can NEVER pass an incomplete head-to-head. First run (no prior file) -> kept={} ->
+    # a no-op (full 60 generated as before).
+    prior = {}
+    if os.path.exists(result_path):
+        try:
+            prior = json.load(open(result_path))
+        except (json.JSONDecodeError, OSError, ValueError):
+            prior = {}
+    kept, todo = _plan_resume(problems, prior, served_name)
+    completions = dict(kept)
+    print(f"loaded {n} problems; concurrency={CONCURRENCY}; served={served_name}; "
+          f"resume_kept={len(kept)}; to_generate={len(todo)}")
+
+    if todo:
+        ready_deadline = time.time() + READY_TIMEOUT_S
+        if hard is not None:
+            ready_deadline = min(ready_deadline, hard - TEARDOWN_S)
+        status = _wait_ready(base, ready_deadline, serve_pid)
+        if status != "ready":
+            reason = {"dead": "server process exited during load",
+                      "timeout": "server not ready before deadline"}[status]
+            # NEVER clobber prior real answers on a transient serve failure: on a resume that already
+            # holds kept answers, leave the existing (more-complete) file intact for the next resume
+            # instead of overwriting it with an empty FAIL record (that would throw away real progress).
+            if kept:
+                print(f"RESULT stage2-gen {served_name} : server not ready ({reason}); left "
+                      f"{len(kept)} prior answers intact for next resume")
+                return 1
+            _write(result_path, {"stage": "2-gen", "served_name": served_name, "pass": False,
+                                 "reason": reason, "completions": {}})
+            print(f"RESULT stage2-gen {served_name} : FAIL - {reason}")
+            return 1
+
+        gen_deadline = (hard - TEARDOWN_S) if hard is not None else (time.time() + 3600)
+        ex = cf.ThreadPoolExecutor(max_workers=CONCURRENCY)
+        try:
+            fut = {ex.submit(_gen_one, base, served_name, p, gen_deadline): p["question_id"]
+                   for p in todo}
+            for f in cf.as_completed(fut):
+                qid = fut[f]
+                try:
+                    completions[qid] = f.result()
+                except Exception as e:  # noqa: BLE001
+                    completions[qid] = {"content": None, "finish_reason": None,
+                                        "http_status": None, "error": f"future error: {e}"}
+                done = len(completions)
+                if done % 10 == 0 or done == n:
+                    print(f"  generated {done}/{n} ({int(gen_deadline - time.time())}s to deadline)")
+                if time.time() >= gen_deadline:
+                    print("hit generation deadline; recording remaining as not-generated")
+                    break
+        finally:
+            # Do NOT block on a normal `with` exit (shutdown(wait=True)): it would drain running AND
+            # still-queued futures, so on a slow/wedged server client() could return only AFTER the box
+            # kill -> no verdict written (config-reviewer Fence-3 High). Cancel queued work and return.
+            ex.shutdown(wait=False, cancel_futures=True)
+    else:
+        print("RESUME: all 60 already have real answers; writing complete file without re-serving")
 
     # Distinguish infra-incompleteness (never generated before the deadline) from a real empty answer
     # (the model returned no code) -- the former compromises the head-to-head (adversary Strike 6),
@@ -194,7 +252,7 @@ def client(base_url, served_name, result_path):
     _write(result_path, {
         "stage": "2-gen", "served_name": served_name, "pass": True,
         "n": n, "n_with_content": n_ok, "n_not_generated": len(not_generated),
-        "not_generated": not_generated, "concurrency": CONCURRENCY,
+        "not_generated": not_generated, "concurrency": CONCURRENCY, "resumed_kept": len(kept),
         "subset_sha256": lcb.SUBSET_SHA256,
         "subset_content_fingerprint": lcb.subset_content_fingerprint(problems),
         "decode": lcb.DECODE, "completions": completions,

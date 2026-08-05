@@ -85,14 +85,20 @@ stop_child() {
   wait "$CLAUDE_PID" 2>/dev/null || true
 }
 resubmit_self() {                       # chain a fresh job; retry a transient scheduler error before giving up.
-  mkdir -p "$REPO/logs"                  # (build QOS = 1 job/user normally QUEUES the successor as PENDING, not
+  mkdir -p "$REPO/logs" "$REPO/_scratch" # (build QOS = 1 job/user normally QUEUES the successor as PENDING, not
   local rc a                             #  reject, so a foreign build job just delays -- does not break -- the chain.)
+  # Mark the successor as a CHAIN continuation so it PRESERVES the progress/error
+  # breakers (a chain resumes mid-budget). A fresh manual `sbatch` has no marker and
+  # resets them at startup, so a prior BLOCKed run's maxed counter can't insta-stall
+  # a relaunch. Removed below if every resubmit attempt fails (no successor).
+  touch "$REPO/_scratch/.mrefresh_chained"
   for a in 1 2 3; do
     sbatch "$SELF"; rc=$?
     if (( rc == 0 )); then echo "[chain] $(date) resubmitted OK (attempt $a)"; return 0; fi
     echo "[chain] $(date) resubmit attempt $a/3 failed rc=$rc -- retry in 30s" >&2; sleep 30
   done
   echo "[FATAL] $(date) sbatch resubmit FAILED after 3 attempts -- chain BROKEN (check build QOS / time limits)." >&2
+  rm -f "$REPO/_scratch/.mrefresh_chained"   # no successor -> don't leave a stale chain marker for the next launch
   return 1                              # tell the caller the chain is dead so it can cancel orphaned nested jobs
 }
 chain_on_signal() {                     # USR1 ~10 min before the kill: stop child FIRST, then chain
@@ -133,6 +139,20 @@ SID_FILE="$REPO/_scratch/.mrefresh_sid"   # dedicated driver session id -- never
 fastfail=$(cat "$FF_FILE" 2>/dev/null || echo 0); [[ "$fastfail" =~ ^[0-9]+$ ]] || fastfail=0
 throttle=$(cat "$TH_FILE" 2>/dev/null || echo 0); [[ "$throttle" =~ ^[0-9]+$ ]] || throttle=0
 noprogress=$(cat "$NP_FILE" 2>/dev/null || echo 0); [[ "$noprogress" =~ ^[0-9]+$ ]] || noprogress=0
+# Chain vs fresh launch. resubmit_self drops .mrefresh_chained so a chained successor
+# RESUMES mid-budget (counters persist, as intended for cross-6h-wall continuity). A
+# fresh manual `sbatch` has no marker -> reset the breakers so a prior BLOCKed run's
+# maxed counter (e.g. noprogress left at MAX_NOPROGRESS) can't instantly re-stall the
+# new attempt on its first no-commit iteration.
+if [[ -f "$REPO/_scratch/.mrefresh_chained" ]]; then
+  rm -f "$REPO/_scratch/.mrefresh_chained"
+  echo "[start] $(date) chained continuation -- preserving breakers (noprogress=$noprogress throttle=$throttle fastfail=$fastfail)"
+else
+  (( noprogress != 0 || throttle != 0 || fastfail != 0 )) && \
+    echo "[start] $(date) fresh launch -- resetting stale breakers (were noprogress=$noprogress throttle=$throttle fastfail=$fastfail)"
+  noprogress=0; throttle=0; fastfail=0
+  echo 0 > "$NP_FILE"; echo 0 > "$TH_FILE"; echo 0 > "$FF_FILE"
+fi
 reset_breakers(){ fastfail=0; throttle=0; echo 0 > "$FF_FILE"; echo 0 > "$TH_FILE"; }
 # Broadened past the reference: the `claude` CLI renders a 529/429 as bare `API Error: Overloaded` / `API Error:
 # 429` with NO status/http/code keyword, which the reference regex missed -> a recoverable overload was charged
@@ -147,7 +167,7 @@ for ((i=1; i<=MAX_ITERS; i++)); do
   # 2.5h so a stuck-PENDING nested job falls through to a diagnosing iteration instead of spinning. A squeue
   # ERROR (slurmctld hiccup) is NOT read as "idle" -- that would spawn an overlapping iteration / double-submit;
   # retry 3x, then fail-open (assume idle) only to avoid a permanent deadlock on a truly dead scheduler.
-  wait_start=$SECONDS; sq_fail=0
+  wait_start=$SECONDS; sq_fail=0; saw_nested=0; nested_completed=0
   while [[ -n "${SLURM_JOB_ID:-}" ]]; do
     sq_raw=$(squeue --me -h -t RUNNING,PENDING -o '%i %j' 2>/dev/null); sq_rc=$?
     if (( sq_rc != 0 )); then
@@ -157,7 +177,15 @@ for ((i=1; i<=MAX_ITERS; i++)); do
     fi
     sq_fail=0
     nested=$(printf '%s\n' "$sq_raw" | awk '$2 ~ /^mrefresh-nest/ {print $1}' | tr '\n' ' ')
-    [[ -z "${nested// /}" ]] && break                                   # clean read, no mrefresh-nest job -> proceed
+    if [[ -z "${nested// /}" ]]; then
+      # Clean read, no mrefresh-nest job -> proceed. If we HAD been waiting on one it
+      # just finished: a gate verdict has landed. That is real pipeline progress even
+      # though the adjudicating commit lands on the NEXT iteration, so flag it so the
+      # no-progress stall guard below does not miscount the adjudication turn.
+      (( saw_nested )) && nested_completed=1
+      break
+    fi
+    saw_nested=1
     if (( SECONDS - wait_start > 9000 )); then
       echo "[wait] $(date) nested job(s) [$nested] still in flight after 2.5h -- proceeding to a diagnosing iteration, NOT spinning" >&2; break
     fi
@@ -196,6 +224,16 @@ for ((i=1; i<=MAX_ITERS; i++)); do
   head_after=$(git rev-parse HEAD 2>/dev/null || echo none)
   if [[ "$head_after" != "$head_before" && "$head_after" != none ]]; then
     reset_breakers; noprogress=0; echo 0 > "$NP_FILE"; continue          # real progress
+  fi
+  # A nested gate job completing this iteration IS pipeline progress -- the verdict is
+  # now on disk awaiting adjudication (which typically commits next iteration). Treat
+  # it like a commit so the stall guard cannot fire on the very turn a fresh result
+  # lands (observed 2026-08-04: BLOCKED at 25 with an unread PASS verdict in _scratch).
+  # Bounded: a completion resets the breaker ONCE (the job is then gone from squeue),
+  # so a driver that keeps failing to adjudicate still trips the guard afterwards.
+  if (( nested_completed )); then
+    echo "[progress] $(date) nested job completed this iteration (verdict landed) -- treating as progress, resetting breakers"
+    reset_breakers; noprogress=0; echo 0 > "$NP_FILE"; continue
   fi
   noprogress=$((noprogress+1)); echo "$noprogress" > "$NP_FILE"
   if (( noprogress >= MAX_NOPROGRESS )); then

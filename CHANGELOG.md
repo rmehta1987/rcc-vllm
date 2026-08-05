@@ -2,6 +2,37 @@
 
 ## Unreleased — model-refresh (branch milestone/model-refresh)
 
+### Tier A & B Stage 2 (raw code-gen, Gate 2) — measured 2026-08-05, frozen 60-problem LiveCodeBench subset
+
+Greedy pass@1 head-to-head against the incumbent `qwen2.5_coder_32B` (Qwen2.5-Coder-32B-Instruct,
+the model this refresh replaces). Every model — baseline and both candidates — served on
+`vllm-serve-cu129` (vLLM 0.26.0) under the identical frozen DECODE (`prereg.md` §3: greedy,
+`enable_thinking:false`, `max_tokens` 8192) and scored by the same harness on `caslake`;
+`prereg-check` PASS before every scoring run (subset SHA, decode, and the +3.0-pt margin were
+frozen and committed before the first score). Baseline measured 26.67% (16/60) on this subset.
+
+- **Tier B — Qwen3.5-122B-A10B-FP8: Gate-2 PASS, +18.33 pts (45.00% vs 26.67%).** 27/60 vs
+  16/60; by difficulty hard 7/30 vs 0/30, medium 10/18 vs 6/18, easy 10/12 vs 10/12 (tie).
+  Clears the +3.0 margin decisively and coherently — the 2026 122B pulls ahead across the
+  medium/hard tail where the late-2024 32B solves none of the 30 hard problems, and ties on
+  easy. Both runs complete (n_infra=0). Score job `mrefresh-nest-score` 53083189; generations
+  53080066 (122B, concurrency-1 resume that completed the arc195/arc196 tail) and 53057094
+  (baseline). **Gate-2 outcome: adopt Qwen3.5-122B as the Tier-B (H200) served coding model —
+  Stage 3 wires it (registry/rate-table/docs, TP reconciliation), gauntlet-gated.**
+- **Tier A — Qwen3-Coder-30B-A3B-Instruct: Gate-2 NO-GO, −1.67 pts (25.00% vs 26.67%).** 15/60
+  vs 16/60; hard 1/30 vs 0/30, medium 5/18 vs 6/18, easy 9/12 vs 10/12. The smaller
+  30.5B/3.3B-active MoE does not beat the 32B dense incumbent on raw code-gen, so the
+  pre-registered fail-branch applies (`session_start.md` §2): **keep the baseline
+  `qwen2.5_coder_32B` at Tier A.** A valid measured finding, not a blocker. Both runs complete
+  (n_infra=0). Score job 53088886; generations 53057093 + arc196_d resume 53083190
+  (resumed_kept=59), baseline 53057094.
+
+Honest caveat (disclosed in `prereg.md` §5/§9): n=60 greedy is a point estimate; a 3-pt gap is
+within binomial noise (SE ≈ 6 pts near p=0.4). Tier B's +18.33 is far outside that band; Tier A's
+−1.67 is comfortably a non-win. The window (2025-03/04) post-dates the baseline's training cutoff
+(fair to the baseline) and skews hard, so absolute pass rates are low for all models — but the
+COMPARISON is controlled by construction (same subset, decode, harness, and serve env/version).
+
 ### Tier B Stage 1 (serves) — measured 2026-08-05, vLLM 0.26.0 (vllm-serve-cu129), H200 driver 535.216.03
 
 - **Qwen3.5-122B-A10B-FP8: Gate-1 PASS.** Serves on 2×H200 at TP=2 (FP8), 58.24 GiB

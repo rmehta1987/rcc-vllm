@@ -80,11 +80,9 @@ directory.
 | Key | Model | Available | License |
 |---|---|---|---|
 | `qwen2.5_72B` | Qwen2.5-72B-Instruct | Yes (`chat` preset) | Qwen (Tongyi) community license |
-| `qwen2.5_coder_32B` | Qwen2.5-Coder-32B-Instruct | Yes (`code` preset) | Apache-2.0 |
+| `qwen3.8_27B` | Qwen3.8-27B | Yes (`code` preset, default); thinking model with `reasoning_effort` low/medium/xhigh; accepts images; H100 TP=2 | Apache-2.0 |
 | `qwen3_4b` | Qwen3-4B | Yes (`fast` preset; also `code --model qwen3_4b` for cheap coding) | Apache-2.0 |
-| `qwen3_32B` | Qwen3-32B | Yes (`--model qwen3_32B`; thinking model, A100 TP=2) | Apache-2.0 |
 | `qwen3.5_122B` | Qwen3.5-122B-A10B (FP8) | Validated on H200 (serves FP8 TP=2 on 2×H200, vLLM 0.26.0; measured Tier-B coding winner); vision-language (accepts images); production cutover operator-pending | Apache-2.0 |
-| `glm5.2_753B` | GLM-5.2 (FP8) | Staged; needs two or more H200 nodes (multi-node serving not yet built) and a vLLM upgrade | MIT |
 | `llama3.1_70B` | Meta-Llama-3.1-70B-Instruct | Yes (`--model llama3.1_70B`, after a one-time license acknowledgment) | Llama 3.1 Community License + Acceptable Use Policy |
 | `qwen2.5_0.5B` | Qwen2.5-0.5B-Instruct | RCC staff only (smoke tests) | Apache-2.0 |
 
@@ -92,23 +90,33 @@ The license terms and the obligations that apply when you serve these models to
 other people are set out on [Model licenses](licenses.md). Serving Llama 3.1
 additionally requires a one-time recorded acknowledgment.
 
-The H200 nodes are already on the cluster and billed like any other tier; the
-pending work is validation and serve-runtime plumbing, not hardware. `qwen3.5_122B`
-(Qwen3.5-122B-A10B, FP8) has now passed its H200 smoke test — it serves FP8 at TP=2
-on two H200s under vLLM 0.26.0 (the `vllm-serve-cu129` env) and was the measured
-Tier-B coding winner over the incumbent `qwen2.5_coder_32B` on a controlled
-LiveCodeBench subset (+18.3 points pass@1; see the changelog and
-`prompts/60_model_refresh/verdict.md`). What remains before users can serve it is a
-production cutover the operator drives, not a capability question: the live launcher
-pins the 0.10.2 serving env, where this newer architecture does not load, so serving
-it means first routing production to the 0.26.0 env and measuring a billing rate for
-it. It is a vision-language model — the checkpoint carries a vision tower and
-image/video preprocessors — so once cut over it will be the first served model that
-accepts images alongside text. `glm5.2_753B` (GLM-5.2, FP8; text-only) is
-staged but further from serving: its
-755 GB of weights exceed a single H200 node's 564 GB, so it needs the multi-node
-serving path that is not yet built, plus a vLLM upgrade that supports its
-architecture. GLM-5.1 comes later still.
+The coding model changed on 2026-08-19. `qwen3.8_27B` (Qwen3.8-27B, Apache-2.0)
+replaced `qwen2.5_coder_32B` as the `code` preset default on measured evidence: on a
+frozen 60-problem LiveCodeBench subset, scored by an identical harness on an identical
+serve environment, it reached 50.0% pass@1 against the previous default's 26.7% — a
+23.3-point gain. It was the best of six candidates evaluated, and it beat the much
+larger `qwen3.5_122B` (45.0%) at under half the footprint, though that 5-point gap sits
+inside the measurement's noise band. It is a thinking model whose reasoning depth is
+adjustable per request (`reasoning_effort`: `low`, `medium`, or `xhigh`, its default),
+and a vision-language model that accepts images and video alongside text — the first
+served model here to do so. It serves BF16 at TP=2 under vLLM 0.26.0 (the
+`vllm-serve-cu129` env), which the launcher now selects automatically for this model
+family. Tool calling works natively with the `qwen3_coder` parser, also selected
+automatically.
+
+Two caveats. It has no measured billing rate yet, so its sessions bill the reservation
+floor; and its 50.0% was measured with thinking disabled, which is not the model's
+default mode, so that figure is a lower bound on what it can do.
+
+`qwen3.5_122B` (Qwen3.5-122B-A10B, FP8) remains registered and serves FP8 at TP=2 on two
+H200s under the same environment, but is not in the served set; it needs a billing rate
+before users can start it.
+
+Retired 2026-08-19 and deleted from disk: `qwen2.5_coder_32B` and `qwen3_32B`, both
+superseded by `qwen3.8_27B`; and the GLM-5.2-FP8 and DeepSeek-V4-Flash checkpoints,
+neither of which ever served — GLM-5.2's 755 GB exceeded a single H200 node's 564 GB and
+needed a multi-node serving path that was never built, and DeepSeek-V4-Flash failed its
+smoke test because its FP4 expert kernels require a newer driver than the fleet runs.
 
 ### Rough capability frame of reference
 
@@ -120,12 +128,9 @@ parity.
 | Served / staged model | Rough closed-weight analog | Basis (approximate) |
 |---|---|---|
 | `qwen3_4b` | GPT-4o-mini class (light tasks) | 4B thinking model; strong on math for its size |
-| `qwen2.5_coder_32B` | ≈ GPT-4o on coding (2024) | matched GPT-4o on several code benchmarks at release |
-| `qwen3_32B` | o1-mini / GPT-4o-class reasoning | thinking model; multi-step reasoning |
+| `qwen3.8_27B` *(coding default)* | 2026 open-weight frontier for its size | 50.0% vs the retired coder-32B's 26.7% on our frozen LiveCodeBench subset; vendor-reported SWE-bench Pro 61.7 and Terminal-Bench 2.1 73.0, above the much larger Qwen3.7-Plus on both. Vendor figures are self-reported and no independent code-specific evaluation exists yet. |
 | `qwen2.5_72B`, `llama3.1_70B` | GPT-4-turbo / GPT-4o-mini (general) | strong 2024 general models, a generation behind 2026 frontier |
 | `qwen3.5_122B` *(validated; cutover pending)* | ≈ Claude Sonnet 4.5 / GPT-5-mini tier | vision-language mixture-of-experts model (accepts images); scores higher than GPT-5-mini on the BFCL-V4 tool-use benchmark (72.2 vs 55.5), lower than Claude Opus |
-| `glm5.2_753B` *(staged)* | close to Claude Opus 4.8 on coding | within about 1 point of Opus 4.8 on FrontierSWE (74.4 vs 75.1) and 4 points on Terminal-Bench (81 vs 85); above GPT-5.5 on SWE-bench Pro; weaker than Opus on long-horizon agent tasks |
-| GLM-5.1 *(roadmap)* | prior-gen frontier / GPT-5-mini tier | a clear step below 5.2 (Terminal-Bench 62 vs 81) |
 
 The trade is capability for locality: the closed models above score higher on most
 tasks, while these run entirely on RCC hardware, so no data leaves the cluster and
@@ -180,7 +185,7 @@ curl -s "$AISESSION_BASE_URL/models" -H "Authorization: Bearer $AISESSION_API_KE
 Expected output (trimmed):
 
 ```
-{"object": "list", "data": [{"id": "qwen2.5_coder_32B", "object": "model", ...}]}
+{"object": "list", "data": [{"id": "qwen3.8_27B", "object": "model", ...}]}
 ```
 
 A minimal chat completion with the `openai` Python package (install it in your

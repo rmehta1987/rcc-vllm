@@ -39,7 +39,7 @@ ai-session status
 A healthy session reports:
 
 ```
-session: READY  (model qwen2.5_coder_32B, URL http://localhost:<GW_PORT>/v1)
+session: READY  (model qwen3.8_27B, URL http://localhost:<GW_PORT>/v1)
 access key: set (abc123...; full value: ai-session connect)
 ```
 
@@ -104,9 +104,9 @@ under. Add a model definition **on the machine where the editor runs**:
 ```yaml title="~/.continue/config.yaml"
 allowAnonymousTelemetry: false
 models:
-  - name: Qwen2.5-Coder-32B (RCC)
+  - name: Qwen3.8-27B (RCC)
     provider: openai
-    model: qwen2.5_coder_32B
+    model: qwen3.8_27B
     apiBase: http://localhost:<GW_PORT>/v1
     apiKey: <SESSION_KEY>
     roles: [chat, edit, apply]
@@ -119,9 +119,9 @@ Older Continue versions read a JSON file instead:
   "allowAnonymousTelemetry": false,
   "models": [
     {
-      "title": "Qwen2.5-Coder-32B (RCC)",
+      "title": "Qwen3.8-27B (RCC)",
       "provider": "openai",
-      "model": "qwen2.5_coder_32B",
+      "model": "qwen3.8_27B",
       "apiBase": "http://localhost:<GW_PORT>/v1",
       "apiKey": "<SESSION_KEY>"
     }
@@ -140,11 +140,11 @@ Older Continue versions read a JSON file instead:
 - `<SESSION_KEY>` is the session access key minted at start. Every request must
   carry it; a request without it is refused with HTTP 401. See
   [Coding Sessions](overview.md#the-session-access-key) for sharing it with your lab.
-- `model` must equal the model the session was started with; `qwen2.5_coder_32B` is
+- `model` must equal the model the session was started with; `qwen3.8_27B` is
   the default. If you started the session with a different model, use that key here
   (see model selection on [Coding Sessions](overview.md)).
 
-Verify: in Continue's model selector choose "Qwen2.5-Coder-32B (RCC)" and send a
+Verify: in Continue's model selector choose "Qwen3.8-27B (RCC)" and send a
 short chat message. A streamed reply confirms the whole path — editor, tunnel,
 connection point, session. No reply means a connection problem; see
 [Troubleshooting](../troubleshooting.md).

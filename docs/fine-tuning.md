@@ -227,7 +227,7 @@ the reference point, and it cuts two ways:
   route — see [Agent responsibilities and risks](coding/agents.md) — is cheaper,
   keeps improving as your data changes, and is the first thing to try.
 - Its open-weights variant, **Biomni-R0**, *is* trained, from Qwen3-8B and
-  Qwen3-32B, because the vanilla Qwen3 models struggle with multi-turn tool use
+  a Qwen3-family base, because the vanilla Qwen3 models struggle with multi-turn tool use
   and strict format compliance. The two-phase recipe below is that variant's
   (from the published *Science* version's supplement; it is not in the earlier
   bioRxiv preprint), for the case where you need an open model — no external API
@@ -256,7 +256,7 @@ an external teacher is fine.
 
 Full-parameter training of a 32B model does not fit on one GPU: the weights,
 gradients, and Adam optimizer state together need roughly 16 bytes per parameter
-— about 520 GB for Qwen3-32B — before activations, so the model is sharded across
+— about 520 GB for a 32B model — before activations, so the model is sharded across
 many GPUs. The paper's allocation:
 
 | Model | GPUs | Rollout parallelism | Actor-update parallelism |
@@ -277,7 +277,10 @@ learning.
   [Step 3 script](#step-3-write-the-training-script) above with the LoRA config
   removed (so every weight updates) and a sharding backend added — DeepSpeed
   ZeRO-3 or PyTorch FSDP — because the full model no longer fits on one GPU.
-  Point `BASE` at `/project/rcc/mehta5/vllm/models/Qwen3-32B` and format each
+  Point `BASE` at a checkpoint you have staged. NOTE (2026-08-19): the
+  `Qwen3-32B` weights referenced below were deleted from disk; stage a base
+  checkpoint yourself, or use `/project/rcc/mehta5/vllm/models/Qwen3.8-27B`.
+  Format each
   trajectory with that model's own chat template, exactly as in the LoRA example.
 - **Phase 2 (RL)** uses GRPO (Group Relative Policy Optimization) with per-prompt
   rollout groups and separate rollout and actor-update parallelism — which

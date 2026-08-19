@@ -1,0 +1,646 @@
+{
+  "stage": "2-score",
+  "label": "Qwen3.8-27B",
+  "served_name": "bench-qwen38-27b",
+  "n": 60,
+  "solved": 30,
+  "pass_at_1": 0.5,
+  "pass_at_1_pct": 50.0,
+  "by_difficulty": {
+    "hard": {
+      "solved": 6,
+      "n": 30,
+      "pct": 20.0
+    },
+    "medium": {
+      "solved": 13,
+      "n": 18,
+      "pct": 72.2
+    },
+    "easy": {
+      "solved": 11,
+      "n": 12,
+      "pct": 91.7
+    }
+  },
+  "n_with_content": 60,
+  "n_not_generated": 0,
+  "not_generated": [],
+  "n_infra": 0,
+  "infra_ids": [],
+  "concurrency": 1,
+  "subset_sha256": "b3c2b75377c305f495de834ec699bc07d70b6b507230fe16c8d73bf550b7021b",
+  "subset_content_fingerprint": "46be25d4d81d229b8cf17c16f02be70fea950d81e3f761d7ae99d93ebb61e072",
+  "decode": {
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "n": 1,
+    "seed": 0,
+    "max_tokens": 8192,
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    }
+  },
+  "per_problem": {
+    "3717": {
+      "solved": true,
+      "detail": "all 42 tests pass",
+      "n_tests": 42,
+      "difficulty": "hard",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3744": {
+      "solved": false,
+      "detail": "test 2: wrong answer (got 7 want 8)",
+      "n_tests": 42,
+      "difficulty": "hard",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3750": {
+      "solved": true,
+      "detail": "all 42 tests pass",
+      "n_tests": 42,
+      "difficulty": "medium",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3759": {
+      "solved": true,
+      "detail": "all 42 tests pass",
+      "n_tests": 42,
+      "difficulty": "medium",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3765": {
+      "solved": true,
+      "detail": "all 42 tests pass",
+      "n_tests": 42,
+      "difficulty": "hard",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3773": {
+      "solved": true,
+      "detail": "all 33 tests pass",
+      "n_tests": 33,
+      "difficulty": "easy",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3777": {
+      "solved": false,
+      "detail": "test 2: wrong answer (got -1 want 9)",
+      "n_tests": 43,
+      "difficulty": "hard",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3784": {
+      "solved": false,
+      "detail": "child produced no verdict (rc=1): ELUDE + \"\\n\" + code, ns)  # our own benchmark harness; model code isolated in this child\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<string>\", line 11\n    ```python\n    ^\nSyntaxError: invalid syntax\n",
+      "n_tests": 42,
+      "difficulty": "hard",
+      "is_functional": true,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3788": {
+      "solved": true,
+      "detail": "all 34 tests pass",
+      "n_tests": 34,
+      "difficulty": "easy",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3789": {
+      "solved": false,
+      "detail": "child produced no verdict (rc=1): ELUDE + \"\\n\" + code, ns)  # our own benchmark harness; model code isolated in this child\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<string>\", line 11\n    ```python\n    ^\nSyntaxError: invalid syntax\n",
+      "n_tests": 42,
+      "difficulty": "hard",
+      "is_functional": true,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3791": {
+      "solved": true,
+      "detail": "all 42 tests pass",
+      "n_tests": 42,
+      "difficulty": "medium",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3793": {
+      "solved": true,
+      "detail": "all 44 tests pass",
+      "n_tests": 44,
+      "difficulty": "medium",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3794": {
+      "solved": true,
+      "detail": "all 43 tests pass",
+      "n_tests": 43,
+      "difficulty": "medium",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3795": {
+      "solved": false,
+      "detail": "test 7: wrong answer (got 1 want 0)",
+      "n_tests": 44,
+      "difficulty": "medium",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3799": {
+      "solved": true,
+      "detail": "all 35 tests pass",
+      "n_tests": 35,
+      "difficulty": "easy",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3801": {
+      "solved": true,
+      "detail": "all 42 tests pass",
+      "n_tests": 42,
+      "difficulty": "hard",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3805": {
+      "solved": true,
+      "detail": "all 44 tests pass",
+      "n_tests": 44,
+      "difficulty": "medium",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3809": {
+      "solved": true,
+      "detail": "all 43 tests pass",
+      "n_tests": 43,
+      "difficulty": "medium",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3811": {
+      "solved": true,
+      "detail": "all 33 tests pass",
+      "n_tests": 33,
+      "difficulty": "easy",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3817": {
+      "solved": true,
+      "detail": "all 33 tests pass",
+      "n_tests": 33,
+      "difficulty": "easy",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "3832": {
+      "solved": false,
+      "detail": "child produced no verdict (rc=1): ELUDE + \"\\n\" + code, ns)  # our own benchmark harness; model code isolated in this child\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<string>\", line 11\n    ```python\n    ^\nSyntaxError: invalid syntax\n",
+      "n_tests": 33,
+      "difficulty": "easy",
+      "is_functional": true,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc397_a": {
+      "solved": true,
+      "detail": "all 43 tests pass",
+      "n_tests": 43,
+      "difficulty": "easy",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc397_b": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want '1')",
+      "n_tests": 43,
+      "difficulty": "medium",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc397_c": {
+      "solved": true,
+      "detail": "all 42 tests pass",
+      "n_tests": 42,
+      "difficulty": "medium",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc397_d": {
+      "solved": false,
+      "detail": "test 41: wrong output (got '-1' want '3 0')",
+      "n_tests": 43,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc397_e": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want 'Yes')",
+      "n_tests": 42,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc397_f": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want '5')",
+      "n_tests": 42,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc397_g": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want '1')",
+      "n_tests": 43,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc398_a": {
+      "solved": true,
+      "detail": "all 42 tests pass",
+      "n_tests": 42,
+      "difficulty": "easy",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc398_b": {
+      "solved": true,
+      "detail": "all 44 tests pass",
+      "n_tests": 44,
+      "difficulty": "medium",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc398_c": {
+      "solved": true,
+      "detail": "all 42 tests pass",
+      "n_tests": 42,
+      "difficulty": "medium",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc398_d": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want '001010')",
+      "n_tests": 43,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc398_f": {
+      "solved": true,
+      "detail": "all 43 tests pass",
+      "n_tests": 43,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc398_g": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want 'Aoki')",
+      "n_tests": 43,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc399_a": {
+      "solved": true,
+      "detail": "all 44 tests pass",
+      "n_tests": 44,
+      "difficulty": "easy",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc399_b": {
+      "solved": true,
+      "detail": "all 44 tests pass",
+      "n_tests": 44,
+      "difficulty": "easy",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc399_c": {
+      "solved": true,
+      "detail": "all 43 tests pass",
+      "n_tests": 43,
+      "difficulty": "medium",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc399_d": {
+      "solved": true,
+      "detail": "all 2 tests pass",
+      "n_tests": 2,
+      "difficulty": "medium",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc399_e": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want '4')",
+      "n_tests": 44,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc399_f": {
+      "solved": true,
+      "detail": "all 43 tests pass",
+      "n_tests": 43,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc400_a": {
+      "solved": true,
+      "detail": "all 43 tests pass",
+      "n_tests": 43,
+      "difficulty": "easy",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc400_b": {
+      "solved": true,
+      "detail": "all 44 tests pass",
+      "n_tests": 44,
+      "difficulty": "easy",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc400_c": {
+      "solved": false,
+      "detail": "test 2: timeout (> 6s)",
+      "n_tests": 43,
+      "difficulty": "medium",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc400_d": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want '1')",
+      "n_tests": 44,
+      "difficulty": "medium",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc400_e": {
+      "solved": true,
+      "detail": "all 5 tests pass",
+      "n_tests": 5,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "abc400_g": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want '12')",
+      "n_tests": 6,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "arc194_a": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want '8')",
+      "n_tests": 43,
+      "difficulty": "medium",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "arc194_b": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want '4')",
+      "n_tests": 43,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "arc194_c": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '31' want '16')",
+      "n_tests": 43,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "arc194_d": {
+      "solved": false,
+      "detail": "test 3: wrong output (got '28828800' want '679173354')",
+      "n_tests": 42,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "arc194_e": {
+      "solved": false,
+      "detail": "test 5: wrong output (got 'Yes' want 'No')",
+      "n_tests": 42,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "arc195_a": {
+      "solved": true,
+      "detail": "all 43 tests pass",
+      "n_tests": 43,
+      "difficulty": "medium",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "arc195_b": {
+      "solved": false,
+      "detail": "test 3: timeout (> 6s)",
+      "n_tests": 43,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "stop",
+      "gen_error": null,
+      "has_content": true
+    },
+    "arc195_c": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want 'Yes\\nB 2 3\\nR 3 2\\nB 2 2\\nB 3 3\\nR 2 4\\nNo\\nYes\\nR 1 1\\nR 1 2\\nR 2 2\\nR 2 1')",
+      "n_tests": 5,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "arc195_d": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want '3\\n4\\n8')",
+      "n_tests": 2,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "arc195_e": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want '2\\n3')",
+      "n_tests": 43,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "arc196_a": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want '5')",
+      "n_tests": 43,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "arc196_b": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want '2\\n0\\n2')",
+      "n_tests": 2,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "arc196_c": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want '1')",
+      "n_tests": 43,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    },
+    "arc196_d": {
+      "solved": false,
+      "detail": "test 0: wrong output (got '' want 'Yes\\nNo')",
+      "n_tests": 42,
+      "difficulty": "hard",
+      "is_functional": false,
+      "finish_reason": "length",
+      "gen_error": null,
+      "has_content": true
+    }
+  }
+}

@@ -23,7 +23,7 @@ and submission — see [Fine-Tuning a Model on Your Own Data](fine-tuning.md).
 2. The directory must be **on project or scratch storage** and readable by you
    from GPU nodes (not only from your laptop). An absolute path is required.
 3. The adapter must have been **trained on the same base model the session
-   serves**. An adapter trained on Qwen2.5-Coder-32B belongs in a `code`
+   serves**. An adapter trained on Qwen3.8-27B belongs in a `code`
    session; one trained on Qwen2.5-72B-Instruct belongs in a `chat` session.
    The start command warns if the adapter's recorded base does not match, but
    it cannot verify quality — a mismatched adapter usually produces poor
@@ -69,7 +69,7 @@ curl -s "$AISESSION_BASE_URL/chat/completions" \
   -d '{"model": "myft", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
-Requests that keep the base model's name (for example `qwen2.5_coder_32B`)
+Requests that keep the base model's name (for example `qwen3.8_27B`)
 are answered by the unmodified base model, in the same session, at no extra
 cost — useful for A/B-comparing your fine-tune against stock behavior.
 

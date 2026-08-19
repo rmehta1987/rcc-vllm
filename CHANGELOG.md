@@ -2,6 +2,72 @@
 
 ## Unreleased — model-refresh (branch milestone/model-refresh)
 
+### Coding incumbent cutover — Qwen3.8-27B replaces Qwen2.5-Coder-32B (2026-08-19)
+
+Measured on the frozen 60-problem LiveCodeBench subset (`subset_sha256=b3c2b753…7021b`,
+greedy, `enable_thinking:false`, `max_tokens` 8192, concurrency 1), scored by the same
+harness on `caslake`, `prereg-check` PASS before scoring. Score job 53531932.
+
+- **Qwen3.8-27B: 50.00% (30/60) vs baseline 26.67% (16/60), +23.33 pts.** By difficulty
+  hard 6/30, medium 13/18, easy 11/12. Best of six candidates; beats `qwen3.5_122B`
+  (45.00%) at 44% of its footprint, though that 5-pt gap is inside the n=60 noise band
+  (SE ≈ 6 pts near p=0.5). Generation job 53496745.
+- Also measured this round, previously unrecorded: Qwen3.6-35B-A3B 43.33%,
+  Qwen3-Coder-Next 36.67% (both Gate-2 PASS).
+
+**Tool calling — a defect found and fixed before it shipped.** `launch_ai_session.sh`
+mapped `qwen3*` to the `hermes` tool parser. Qwen3.8-27B emits tool calls in XML
+(`<tool_call><function=NAME><parameter=K>v</parameter></function></tool_call>`); hermes
+`json.loads()` the text between the tags and structurally cannot parse it, which would
+have reproduced the silent empty-`tool_calls` failure that broke opencode on
+Qwen2.5-Coder. MEASURED job 53534097 across three parsers: `hermes`
+MODEL_EMITS_PARSER_MISMATCH (0 calls, raw XML in content); `qwen3_coder` and `qwen3_xml`
+PARSER_WORKS (correct name+args, no spurious call on a no-tool prompt). The glob is now
+split so the 3.5/3.6/3.8 family gets `qwen3_coder` while `qwen3_32B`, whose template
+emits JSON, kept `hermes` — folding them together would have broken a served model.
+The `AGENTS.md` tool-tag workaround is obsolete for this model and documented as such.
+
+**Serving env now follows the model.** `launch_ai_session.sh` hardcoded the vLLM 0.10.2
+`vllm-probe` env, which cannot load `Qwen3_5ForConditionalGeneration`. Serving the 27B
+there would have reserved GPUs, failed on load, and floor-billed. The launcher now routes
+the Qwen3.5-family to `vllm-serve-cu129` (0.26.0); every other model keeps 0.10.2.
+
+**MTP speculative decoding verified available** (not enabled). vLLM 0.26.0 resolves
+`Qwen3_5MTP` from our checkpoint's in-tree draft head (`mtp_num_hidden_layers: 1`).
+A/B on 2×H100, job 53533204: 90.36% draft acceptance (375/415), 23.22 vs 15.17 tok/s
+(+53%) under `--enforce-eager`. NOT enabled for benchmarking — it perturbed greedy output
+on 1 of 3 prompts, and the benchmark's value is that it is controlled by construction.
+Its place is the serving path, where a ~35% GPU-time reduction is a direct SU saving;
+that needs a rate measurement and a check against vLLM #46249 (MTP + tool calls) first.
+
+**Models deleted from disk (1.18 TB reclaimed, 1.79 TB → 644 GB).** GLM-5.2-FP8 (704 GB,
+never servable: 755 GB exceeds one 4×H200 node and the multi-node launcher does not
+exist), DeepSeek-V4-Flash (149 GB, Gate-1 NO-GO), Qwen3-Coder-Next (149 GB),
+Qwen2.5-Coder-32B (62 GB), Qwen3-32B (62 GB), Qwen3-Coder-30B-A3B (57 GB). Configs,
+index files, and licenses for the two never-served checkpoints are preserved under
+`_scratch/tombstones/` with a re-staging recipe.
+
+**Consequences recorded, not papered over:**
+- `qwen3.8_27B` has **no `rate_table.json` row**, so coding sessions now bill the
+  reservation FLOOR with no token-metered component. `qwen2.5_coder_32B` held one of only
+  three honest rate rows. A `bench_billing.py` run on the cu129 env is owed and is now
+  the highest-priority open item.
+- The frozen benchmark baseline's weights are gone. The 26.67% anchor survives only as
+  `benchmark/frozen_baseline/stage2_score_bench-coder32b.json`, which
+  `score_stage2.sbatch` still reuses for adjudication — but it can never be regenerated
+  or re-run under a new condition. Benchmark evidence was moved out of gitignored
+  `_scratch/` into tracked `benchmark/frozen_baseline/` before any weights were deleted.
+- `tools/stage2_score.py:26` still reads `BASELINE_KEY = "qwen2.5_coder_32B"` and was
+  deliberately NOT edited: `prereg-check` verifies harness constants against the frozen
+  `prereg.md`, and editing it in place is exactly the post-hoc change that gate exists to
+  catch. Promoting 50.00% to the baseline needs a NEW pre-registration for the next round.
+- 50.00% was measured with thinking OFF, which is **not** this model's default mode
+  (`reasoning_effort: xhigh`). The figure is a lower bound; a thinking-on run is unrun.
+- `qwen2.5_coder_32B` was the only model an external user (ndtrung) had ever run.
+
+Docs updated across 15 pages, including inverting the tool-calling guidance that told
+users to avoid the coding model for agent work. `mkdocs build --strict` passes.
+
 ### Stage 3 (service wiring, Gate 3) — Tier-B winner wired branch-local; production cutover deferred to operator (2026-08-05)
 
 Wires the measured Tier-B result into the service on the branch and hands the one step the

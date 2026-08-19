@@ -93,7 +93,7 @@ Options and their defaults:
 | `--account NAME` | none — required once | Your Slurm account. Required on the first run, then remembered in `~/.ai-session/config`. |
 | `--partition NAME` | none — required once | The GPU partition to run in. Required on the first run, then remembered. |
 | `--time HH:MM:SS` | `02:00:00` | Session time limit. The session ends after this even if you forget `ai-session stop`, which caps the maximum floor charge. |
-| `--model KEY` | preset's model | Serve a different registered model (e.g. `qwen3_32B`, a thinking model, or `llama3.1_70B`); the right GPU configuration is chosen for you. See [Command Reference](reference.md#models). |
+| `--model KEY` | preset's model | Serve a different registered model (e.g. `qwen2.5_72B`, a general chat modelg model, or `llama3.1_70B`); the right GPU configuration is chosen for you. See [Command Reference](reference.md#models). |
 | `--agent` | off | Enable native tool calling, so a tool-calling model can call the opt-in [reference tools](#web-search-and-reference-tools-opt-in) itself. Not needed for web search or URL fetch. |
 | `--lora NAME=PATH` | none | Also serve your own fine-tuned adapter; see [Your Own Fine-Tuned Model](lora.md). Repeatable. |
 
@@ -296,7 +296,7 @@ This enables, as per-chat toggles inside Open WebUI:
    Semantic Scholar) appears under the message Tools menu. Open WebUI can drive
    it with any model. For the model to place the tool calls itself, start the
    session with a tool-calling model and the `--agent` flag —
-   `AISESSION_TOOLS=1 ai-session chat --model qwen3_32B --agent` — since the
+   `AISESSION_TOOLS=1 ai-session chat --model qwen3.8_27B --agent` — since the
    72B `chat` preset does not emit tool calls reliably.
 
 !!! warning "These tools send data outside RCC — it is why they are off by default"

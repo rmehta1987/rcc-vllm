@@ -126,10 +126,32 @@ if [ "${ENFORCE_EAGER}" = "1" ]; then EAGER_FLAG="--enforce-eager"; fi
 # NOTE: this changes the production serve config; throughput rates measured by
 # bench_billing (batch config) don't transfer -- but agent sessions are
 # interactive and floor-billed, so the token rate is moot for them.
+# Serving env follows the MODEL. The default vllm-probe env is vLLM 0.10.2, which
+# does not register Qwen3_5ForConditionalGeneration / Qwen3_5MoeForConditionalGeneration
+# -- serving a Qwen3.5-family model there reserves GPUs, fails on load, and FLOOR-BILLS
+# the user. Those models serve on vllm-serve-cu129 (vLLM 0.26.0, cu129), the env every
+# model-refresh Gate-1/2 run used. Everything else keeps the proven 0.10.2 path.
+case "${MODEL_KEY}" in
+  qwen3.5*|qwen3.6*|qwen3.8*)
+    ENV_PATH=/project/rcc/mehta5/conda-envs/vllm-serve-cu129
+    echo "[launch] model ${MODEL_KEY} requires vLLM 0.26.0; ENV_PATH=${ENV_PATH}" >&2
+    ;;
+esac
+
 AGENT_FLAGS=""
 if [ "${AGENT_CLIENT}" = "1" ]; then
   case "${MODEL_KEY}" in
-    qwen3*)  TOOL_PARSER="hermes" ;;   # qwen3coder parser also available
+    # Qwen3.5/3.6/3.8 family emit XML tool calls:
+    #   <tool_call><function=NAME><parameter=K>v</parameter></function></tool_call>
+    # The hermes parser json.loads() the text between the tags, so it CANNOT parse
+    # this -- it returns tool_calls=[] with the XML left in content, the same silent
+    # failure that broke opencode on Qwen2.5-Coder. MEASURED job 53534097: hermes
+    # MODEL_EMITS_PARSER_MISMATCH (0 calls, raw tag present); qwen3_coder PARSER_WORKS
+    # (correct name+args, and no spurious call on a no-tool prompt).
+    qwen3.5*|qwen3.6*|qwen3.8*)  TOOL_PARSER="qwen3_coder" ;;
+    # Qwen3-32B emits JSON inside <tool_call> (0 XML markers in its template), so
+    # hermes IS correct for it -- do not fold it into the arm above.
+    qwen3*)  TOOL_PARSER="hermes" ;;
     qwen*)   TOOL_PARSER="hermes" ;;   # Qwen2.5 uses the hermes parser
     llama*)  TOOL_PARSER="llama3_json" ;;
     *)       TOOL_PARSER="hermes" ;;

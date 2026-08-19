@@ -108,12 +108,14 @@ whatever form their configuration uses to declare a local stdio server.
 ## Serve a model that can call tools
 
 An MCP tool is invoked through the model's native tool calling, so the session
-must serve a model that emits tool calls reliably. Use `qwen2.5_72B` or
-`qwen3_4b`, not the default coder model: the served Qwen2.5-Coder-32B checkpoint
-does not emit the tool-call markers the server expects (a known upstream issue),
-so a coder session will not reliably trigger these tools even though the
-configuration is correct. Start the session with tool calling enabled and the 72B
-model:
+must serve a model that emits tool calls reliably. The default coding model
+`qwen3.8_27B` does this correctly (measured 2026-08-19, job 53534097) and is the
+recommended choice. `qwen2.5_72B` and `qwen3_4b` also work.
+
+This guidance changed on 2026-08-19: the previous coding default, Qwen2.5-Coder-32B,
+could NOT be used for MCP tools because it never emitted the marker tokens the parser
+matched. That restriction no longer applies. Start the session with tool calling
+enabled:
 
 ```bash
 ai-session code --agent --model qwen2.5_72B

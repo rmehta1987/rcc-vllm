@@ -134,12 +134,12 @@ variables; `ai-session connect` prints the literal values if you need them.
 |---|---|
 | Base URL | `$AISESSION_BASE_URL` — `http://localhost:<GW_PORT>/v1`, port derived from your user ID |
 | API key | `$AISESSION_API_KEY` — the session access key that `ai-session code` printed (see below) |
-| Model name | `qwen2.5_coder_32B` (default) or `qwen2.5_72B`; must equal the model you started |
+| Model name | `qwen3.8_27B` (default) or `qwen2.5_72B`; must equal the model you started |
 | Context window | 32768 tokens for coding sessions (8192 for the default chat sessions) |
 
 The model name is the identifier vLLM serves under (`--served-model-name`). For
 OpenAI-compatible clients that route through litellm (aider, Continue), prefix it
-with `openai/`, for example `openai/qwen2.5_coder_32B`.
+with `openai/`, for example `openai/qwen3.8_27B`.
 
 ### The session access key
 
@@ -186,8 +186,8 @@ cd /path/to/your/repo
 OPENAI_API_BASE=$AISESSION_BASE_URL \
 OPENAI_API_KEY=$AISESSION_API_KEY \
 /project/rcc/mehta5/aider-env/bin/aider \
-  --model openai/qwen2.5_coder_32B \
-  --weak-model openai/qwen2.5_coder_32B \
+  --model openai/qwen3.8_27B \
+  --weak-model openai/qwen3.8_27B \
   --model-metadata-file /project/rcc/mehta5/vllm/ai-session/aider_model_metadata.json \
   --edit-format diff --analytics-disable
 ```
@@ -227,8 +227,8 @@ To make a single edit and exit, for example from a batch script:
 OPENAI_API_BASE=$AISESSION_BASE_URL \
 OPENAI_API_KEY=$AISESSION_API_KEY \
 /project/rcc/mehta5/aider-env/bin/aider \
-  --model openai/qwen2.5_coder_32B \
-  --weak-model openai/qwen2.5_coder_32B \
+  --model openai/qwen3.8_27B \
+  --weak-model openai/qwen3.8_27B \
   --model-metadata-file /project/rcc/mehta5/vllm/ai-session/aider_model_metadata.json \
   --edit-format diff --analytics-disable \
   --yes-always --no-auto-commit \
@@ -240,8 +240,8 @@ Standard input can be piped in, for example to analyze a job log:
 ```bash
 cat slurm-${SLURM_JOB_ID}.out | \
 OPENAI_API_BASE=$AISESSION_BASE_URL OPENAI_API_KEY=$AISESSION_API_KEY \
-/project/rcc/mehta5/aider-env/bin/aider --model openai/qwen2.5_coder_32B \
-  --weak-model openai/qwen2.5_coder_32B \
+/project/rcc/mehta5/aider-env/bin/aider --model openai/qwen3.8_27B \
+  --weak-model openai/qwen3.8_27B \
   --model-metadata-file /project/rcc/mehta5/vllm/ai-session/aider_model_metadata.json \
   --analytics-disable \
   --message "explain the traceback in this log and propose a fix"
@@ -263,9 +263,9 @@ see [Section 12](#12-data-residency)):
 ```yaml
 allowAnonymousTelemetry: false
 models:
-  - name: Qwen2.5-Coder-32B (RCC)
+  - name: Qwen3.8-27B (RCC)
     provider: openai
-    model: qwen2.5_coder_32B
+    model: qwen3.8_27B
     apiBase: http://localhost:<GW_PORT>/v1
     apiKey: <SESSION_KEY>
     roles: [chat, edit, apply]
@@ -278,9 +278,9 @@ Older Continue versions use `~/.continue/config.json`:
   "allowAnonymousTelemetry": false,
   "models": [
     {
-      "title": "Qwen2.5-Coder-32B (RCC)",
+      "title": "Qwen3.8-27B (RCC)",
       "provider": "openai",
-      "model": "qwen2.5_coder_32B",
+      "model": "qwen3.8_27B",
       "apiBase": "http://localhost:<GW_PORT>/v1",
       "apiKey": "<SESSION_KEY>"
     }
@@ -309,11 +309,11 @@ The verification of 2026-07-03 (Slurm job 51391003) ran opencode 1.14.41
 non-interactively (`opencode run`) against a session started with:
 
 ```bash
-AGENT_CLIENT=1 MODEL=qwen2.5_coder_32B TP=2 CONSTRAINT=A100 \
+AGENT_CLIENT=1 MODEL=qwen3.8_27B TP=2 CONSTRAINT=A100 \
   bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh up
 ```
 
-that is, Qwen2.5-Coder-32B-Instruct on two A100-80GB, served by vLLM 0.10.2 with
+that is, Qwen3.8-27B on two A100-80GB, served by vLLM 0.10.2 with
 `--enable-auto-tool-choice --tool-call-parser hermes`. Three graded tasks were run
 in a scratch git repository: create a new file, modify an existing function, and
 read a file then edit it based on the value read (the third passes only if a read
@@ -341,7 +341,7 @@ Out of the box (session correctly started with `AGENT_CLIENT=1`, provider block
 correctly configured), opencode failed 10 of 10 task attempts against this service,
 for two independent reasons, both measured on 2026-07-03:
 
-1. The served Qwen2.5-Coder-32B-Instruct checkpoint does not generate the
+1. HISTORICAL (fixed 2026-08-19; the retired Qwen2.5-Coder-32B checkpoint did not generate the
    `<tool_call>` / `</tool_call>` marker tokens (vocabulary ids 151657 and 151658)
    that vLLM's hermes parser matches. At temperature 0, asked to reproduce a
    well-formed tool call byte for byte, the model's first emitted token is `{"` —
@@ -381,8 +381,8 @@ The example is the exact file used in the verification:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "rcc/qwen2.5_coder_32B",
-  "small_model": "rcc/qwen2.5_coder_32B",
+  "model": "rcc/qwen3.8_27B",
+  "small_model": "rcc/qwen3.8_27B",
   "share": "disabled",
   "autoupdate": false,
   "enabled_providers": ["rcc"],
@@ -402,7 +402,7 @@ The example is the exact file used in the verification:
         "apiKey": "{env:AISESSION_API_KEY}"
       },
       "models": {
-        "qwen2.5_coder_32B": {
+        "qwen3.8_27B": {
           "name": "Qwen2.5 Coder 32B (local)",
           "limit": {
             "context": 32768,
@@ -427,7 +427,8 @@ provider so no external API is selectable; `share: "disabled"` prevents session
 upload.
 
 Step 3 — create `AGENTS.md` in the repository root with exactly the following
-content. Without this file the model does not emit parseable tool calls (0 of 10
+content. HISTORICAL: with the retired Qwen2.5-Coder-32B, without this file the model
+did not emit parseable tool calls (0 of 10
 task runs passed; see 8.2). The tag is deliberately spelled out in pieces: if the
 literal tag string appeared in the file, it would tokenize to the marker token the
 model cannot reproduce, and the instruction would be lost.
@@ -468,11 +469,11 @@ do NOT imitate it. Emit the correct, complete tags every single time.
 Step 4 — sanity-check before spending tokens, then run:
 
 ```bash
-opencode models   # must list exactly one model: rcc/qwen2.5_coder_32B
+opencode models   # must list exactly one model: rcc/qwen3.8_27B
 opencode          # interactive; or: opencode run "instruction"
 ```
 
-If `opencode models` lists anything besides `rcc/qwen2.5_coder_32B`, the
+If `opencode models` lists anything besides `rcc/qwen3.8_27B`, the
 project-local `opencode.json` is not being picked up; run opencode from the
 directory containing it.
 
@@ -484,7 +485,7 @@ performs the same edits without function calling.
 
 ## 9. Model selection
 
-The default is `qwen2.5_coder_32B` (Qwen2.5-Coder-32B-Instruct). Override the model,
+The default is `qwen3.8_27B` (Qwen3.8-27B). Override the model,
 tensor-parallel degree, and GPU constraint with environment variables on `up`.
 
 Throughput figures below are aggregate, measured by the billing benchmark at
@@ -493,7 +494,7 @@ the basis for the per-token charge, not single-stream latency.
 
 | Model key | Parameters | Config | Prefill (tok/s) | Decode (tok/s) | Reservation floor |
 |---|---|---|---:|---:|---:|
-| `qwen2.5_coder_32B` (default) | 32B | TP=2, 2×A100-80GB | 4773 | 1679 | 2.0 SU/h |
+| `qwen3.8_27B` (default) | 32B | TP=2, 2×A100-80GB | 4773 | 1679 | 2.0 SU/h |
 | `qwen2.5_72B` | 72B | TP=4, 4×A100-80GB | 2901 | 1123 | 4.0 SU/h |
 | `qwen2.5_72B` | 72B | TP=2, 2×H200 | 7594 | 2329 | 6.0 SU/h |
 
@@ -569,7 +570,7 @@ appropriate for unpublished or otherwise restricted source code.
 | Prompt reported as too long | Added file content exceeds the 28000-token input budget. Remove files with `/drop` or clear history with `/clear`. |
 | aider rejects a diff edit | The model produced a malformed diff. Retry, or restart with `EDIT_FORMAT=whole ai-session code`. |
 | Tool-call parse errors (opencode, Cline) | Expected for a locally served model. Confirm the session was started with `AGENT_CLIENT=1`; if errors persist, use aider. |
-| `model 'qwen2.5_coder_32B' is not fully staged` | The model weights are not completely on disk. Wait for staging to finish, or start with `MODEL=qwen2.5_72B`. |
+| `model 'qwen3.8_27B' is not fully staged` | The model weights are not completely on disk. Wait for staging to finish, or start with `MODEL=qwen2.5_72B`. |
 | Port already in use at start | Another session (yours or another user's) holds the default port. Choose another: `GW_PORT=8490 ai-session code`. |
 | Client cannot connect from laptop | The SSH tunnel is not open, or points at the wrong login node. Use the tunnel command printed by `up`, which names the correct node. |
 | Connection refused after working for a while | The SSH session that hosted the gateway closed. Restart with `up`, and run inside `tmux` to prevent recurrence. |

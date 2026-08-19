@@ -102,14 +102,18 @@ habits that keep a mistake small.
 ## Tool calling and the coder model
 
 Agents that use native tool calling depend on the served model emitting
-structured tool calls the serving engine can parse. The engine's `hermes` tool-call parser does
-**not** populate `tool_calls` for Qwen2.5-Coder-32B-Instruct (a known upstream
-issue in the serving software,
-[#29192](https://github.com/vllm-project/vllm/issues/29192)): the tool JSON
-streams back as ordinary text and the agent silently does nothing, with no error
-on either side. Use `qwen2.5_72B` or `qwen3_4b` for any agent, MCP, or
-tool-calling workload; both emit tool calls the parser matches. The coder model
-remains the right default for [aider](aider.md), which drives edits through the
+structured tool calls the serving engine can parse. As of 2026-08-19 the coding default
+`qwen3.8_27B` does this correctly and is suitable for agent, MCP, and tool-calling work
+(measured, job 53534097: correct function name and arguments parsed, and no spurious call
+on a prompt needing none). `qwen2.5_72B` and `qwen3_4b` also work.
+
+This is a change. Until 2026-08-19 the coding default was Qwen2.5-Coder-32B, whose tool
+JSON streamed back as ordinary text with the agent silently doing nothing and no error on
+either side — a known upstream issue,
+[#29192](https://github.com/vllm-project/vllm/issues/29192). Two things fixed it: the new
+model emits calls natively (in an XML form), and the launcher now selects the matching
+`qwen3_coder` parser for this model family instead of `hermes`, which cannot parse that
+form. The coder model also remains the right default for [aider](aider.md), which drives edits through the
 chat-completions API without native tool calling. See
 [opencode and Cline](opencode.md) for the workaround that makes the coder model
 usable with tool-calling agents, and why it is fragile.
@@ -145,7 +149,8 @@ virtual environment on a login node, then run the example:
 
 ```bash
 # 1. Start a tool-calling session (login node, in tmux or screen). Serve the
-#    72B, not the coder default -- the coder model does not emit tool calls (see
+#    NOTE (2026-08-19): the coder default qwen3.8_27B now emits tool calls
+#    correctly, so the 72B is no longer required for agent work (see
 #    the caveat above), so an agent pointed at it would silently do nothing.
 ai-session code --agent --model qwen2.5_72B
 
@@ -159,12 +164,11 @@ eval "$(ai-session env)"
 python "$AISESSION_HOME/examples/agent_pydantic.py"
 ```
 
-!!! warning "Default to qwen2.5_72B, not the coder model"
-    The example defaults to `MODEL=qwen2.5_72B` on purpose. As above, native
-    tool calling fails silently on Qwen2.5-Coder-32B (upstream issue #29192,
-    described above); a custom
-    agent pointed at the coder model will appear to run but never call your
-    tools.
+!!! note "The coder model is now fine for agents"
+    The example defaults to `MODEL=qwen2.5_72B`, which still works. Since 2026-08-19
+    `MODEL=qwen3.8_27B` is equally valid for tool-calling agents — the silent-failure
+    issue described above applied to the retired Qwen2.5-Coder-32B, not to the current
+    coding model.
 
 Everything in this page applies to an agent you build yourself: it runs with
 your permissions, spends your SU, and is your responsibility.

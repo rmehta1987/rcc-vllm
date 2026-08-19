@@ -65,7 +65,7 @@ Verification — the command ends with a READY banner of this form:
 ==> [2/2] starting gateway on 127.0.0.1:<GW_PORT>
     gateway healthy (pid <PID>)  log: .../run/gateway.log
 
-================ READY -- code with the local qwen2.5_coder_32B (ctx 32768) ================
+================ READY -- code with the local qwen3.8_27B (ctx 32768) ================
 ```
 
 followed by the aider command to copy, the connection parameters for other
@@ -134,12 +134,12 @@ values and ready-to-paste setup for every client.
 |---|---|
 | Base URL | `$AISESSION_BASE_URL` — `http://localhost:<GW_PORT>/v1`; the port is derived from your numeric user ID (`8400 + UID % 90`), so it differs per user |
 | API key | `$AISESSION_API_KEY` — the session access key (see below) |
-| Model name | `qwen2.5_coder_32B` (default) or `qwen2.5_72B`; must equal the model you started |
+| Model name | `qwen3.8_27B` (default) or `qwen2.5_72B`; must equal the model you started |
 | Context window | 32768 tokens for coding sessions (8192 for chat sessions) |
 
 The model name is the identifier the server exposes. Clients that route through
 litellm (aider, Continue) prefix it with `openai/` to select the standard
-format, for example `openai/qwen2.5_coder_32B`.
+format, for example `openai/qwen3.8_27B`.
 
 ### The session access key
 
@@ -187,7 +187,7 @@ same `localhost` URL directly. For what an SSH tunnel is and how to debug one, s
 
 ## Choosing a model
 
-The default is `qwen2.5_coder_32B` (Qwen2.5-Coder-32B-Instruct). To serve the
+The default is `qwen3.8_27B` (Qwen3.8-27B). To serve the
 general 72B model instead, run `ai-session code --model qwen2.5_72B`; the right
 GPU configuration is chosen for you. For light work — debugging, quick questions,
 or simple edits where you want the cheapest session — serve the small `qwen3_4b`
@@ -195,18 +195,25 @@ on a single GPU with `ai-session code --model qwen3_4b`; it holds one GPU at the
 1.0 SU/h floor and, unlike the coder model, emits native tool calls reliably, so
 it is also the small option for `--agent` clients and MCP tools (see
 [opencode and Cline](opencode.md) and [Agent responsibilities](agents.md)).
-For a coding model that reasons before answering, serve `qwen3_32B`
-(`ai-session code --model qwen3_32B`): a Qwen3 thinking model on two A100s whose
+The coding default `qwen3.8_27B` already reasons before answering — it is a thinking
+model, on by default at `reasoning_effort: xhigh`, and its
 chain of thought is returned separately from the answer — visible in opencode with
 `--thinking` (see [opencode](opencode.md#seeing-the-models-reasoning-qwen3-only)).
 
 | Model key | Parameters | GPUs it runs on | Prefill (tok/s) | Decode (tok/s) | Reservation floor |
 |---|---|---|---:|---:|---:|
 | `qwen3_4b` (cheapest; debugging, simple edits, tool calling) | 4B | 1 x A100-80GB | — | — | 1.0 SU/h |
-| `qwen2.5_coder_32B` (default) | 32B | 2 x A100-80GB | 4773 | 1679 | 2.0 SU/h |
-| `qwen3_32B` (thinking; reasons before editing) | 32B | 2 x A100-80GB | — | — | 2.0 SU/h |
+| `qwen3.8_27B` (default; thinking model, accepts images) | 27.8B | 2 x H100-80GB | — | — | see note |
 | `qwen2.5_72B` | 72B | 4 x A100-80GB | 2901 | 1123 | 4.0 SU/h |
 | `qwen2.5_72B` (H200 option) | 72B | 2 x H200 | 7594 | 2329 | 6.0 SU/h |
+
+!!! warning "`qwen3.8_27B` has no measured billing rate yet"
+    The coding default became `qwen3.8_27B` on 2026-08-19 and does not yet have a
+    `rate_table.json` record. Until one is measured, its sessions bill the **reservation
+    floor** for the GPUs held — you are charged for GPU time, with no token-metered
+    component. Budget on wall-clock, not on tokens. Note also that this model thinks by
+    default at `reasoning_effort: xhigh`, which can generate a large number of reasoning
+    tokens and therefore hold the GPU longer; pass `low` or `medium` for routine edits.
 
 Throughput figures are aggregate, measured by the billing benchmark at concurrency
 64 over prefill-heavy, decode-heavy, and balanced request mixes.
@@ -257,8 +264,8 @@ with the service; the [Build your own agent](agents.md#build-your-own-agent)
 section walks through it.
 
 Use `qwen2.5_72B` or `qwen3_4b`, not the coder model, for any tool-calling
-agent: the server's tool-call parser does not populate `tool_calls` for
-Qwen2.5-Coder-32B (model-server bug #29192), so a custom agent pointed at the
+agent: as of 2026-08-19 the coding default `qwen3.8_27B` DOES populate `tool_calls`
+correctly (measured, job 53534097), so a custom agent pointed at the
 coder model runs but never calls your tools. Before running an autonomous agent, read
 [Agent responsibilities and risks](agents.md): it acts with your full cluster
 permissions and its actions are your responsibility.

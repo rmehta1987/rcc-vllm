@@ -29,7 +29,7 @@ Once you have those, you load the module and start a session as described in
 Sessions are billed in Service Units (SU), where 1 SU is one A100-GPU-hour. You are charged
 the greater of two things: the GPUs you hold (`w_gpu × N × hours`) or the tokens you
 process. For interactive work the hold cost almost always dominates. The default coding
-session (Qwen2.5-Coder-32B on two A100 cards) costs 2.0 SU per hour. The full formula and
+session (Qwen3.8-27B on two A100 cards) costs 2.0 SU per hour. The full formula and
 the measured per-model rates are in [Billing and Service Units](billing.md).
 
 ### How do I keep the cost down?
@@ -68,10 +68,10 @@ the session, so coordinate within the group on who runs it.
 
 ### Which model should I use?
 
-Use Qwen2.5-Coder-32B for code, the Qwen2.5-72B general model for mixed prose-and-code work
+Use Qwen3.8-27B for code, the Qwen2.5-72B general model for mixed prose-and-code work
 or when you specifically want the largest general model, and Qwen3-4B for quick or
 low-cost tasks. For math and multi-step planning, the Qwen3 thinking models reason
-before answering — Qwen3-32B (`--model qwen3_32B`) on two A100s, or the small Qwen3-4B.
+before answering — the coding default Qwen3.8-27B is itself a thinking model, or the small Qwen3-4B.
 All served models are text-only; if you need a vision model (for images), ask
 RCC staff.
 
@@ -89,7 +89,7 @@ enable per conversation in Open WebUI: web search, URL fetch, and academic refer
 (arXiv, bioRxiv, medRxiv, PubMed, Semantic Scholar). All three work with any served model,
 orchestrated by the UI. For the model to place the reference-tool calls itself, start a
 tool-calling model with the `--agent` flag —
-`AISESSION_TOOLS=1 ai-session chat --model qwen3_32B --agent`. These tools reach
+`AISESSION_TOOLS=1 ai-session chat --model qwen3.8_27B --agent`. These tools reach
 outside RCC (see [Is my data private?](#is-my-data-private) and
 [Getting Started](getting-started.md#web-search-and-reference-tools-opt-in)); they are off by
 default.
@@ -105,10 +105,15 @@ VS Code or JetBrains.
 
 ### My agent said it made a change, but nothing happened. Why?
 
-The Qwen2.5-Coder-32B model does not emit the tool-call markers that the model server's parser expects,
-so tool calls can fail silently: the agent reports success but no file is edited. Use the
-`AGENTS.md` workaround documented on the [opencode](coding/opencode.md) page, or switch to
-the Qwen2.5-72B or Qwen3 model for agent work, which do not have this problem.
+This was a real failure mode with the previous coding model (Qwen2.5-Coder-32B, retired
+2026-08-19), which never emitted the tool-call marker tokens its parser matched, so tool
+calls streamed back as plain text and agents reported success without editing anything.
+
+The current coding model, `qwen3.8_27B`, does not have this problem. It emits tool calls
+natively and they are parsed correctly (measured 2026-08-19, job 53534097: correct function
+name and arguments returned, and no spurious call on a prompt that needed none). If an agent
+still reports a change that did not happen, it is not this bug — check that the session was
+started with `--agent`, and see the [troubleshooting page](troubleshooting.md).
 
 ### How do I add an MCP tool to my agent?
 

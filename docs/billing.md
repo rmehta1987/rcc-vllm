@@ -120,7 +120,7 @@ is `w_gpu * N`, the SU cost per hour of holding that configuration.
 | `qwen2.5_72B`       | a100     |        4 |         2901.16 |        1122.71 |          4.0 |
 | `qwen2.5_72B`       | h100     |        4 |         3787.33 |        1810.50 |          8.0 |
 | `qwen2.5_72B`       | h200     |        2 |         7593.69 |        2328.72 |          6.0 |
-| `qwen2.5_coder_32B` | a100     |        2 |         4772.81 |        1679.03 |          2.0 |
+| `qwen2.5_coder_32B` *(retired 2026-08-19)* | a100 |     2 |         4772.81 |        1679.03 |          2.0 |
 | `qwen3_4b`          | a100     |        1 |        20063.28 |        4128.74 |          1.0 |
 
 Provenance: all five records were benchmarked with the model server (vLLM 0.10.2) at dtype bfloat16, at
@@ -137,8 +137,8 @@ not the single-stream speed one interactive user perceives. Session start comman
 and model choice are covered in [Coding Sessions](coding/overview.md) and
 [Getting Started](getting-started.md).
 
-Models without a measured record — `qwen3_32B` today, and the roadmap models
-(`qwen3.5_122B`, GLM-5.1 / GLM-5.2) when they arrive — are billed on the
+Models without a measured record — `qwen3.8_27B` (the coding default) today, and
+`qwen3.5_122B` when it arrives — are billed on the
 reservation floor alone (`w_gpu × N × hours`), with no token term. The floor is the
 authoritative, dominant charge for interactive sessions in any case; a measured
 token rate is added later if a model is benchmarked. A rate record is only used
@@ -164,10 +164,15 @@ ten-thousandth of the bill, for a single request. The H200 session costs more th
 the A100 session for the same work because it costs more to hold — the intended
 behavior of the type multiplier.
 
-The everyday number: the default coding session (`qwen2.5_coder_32B` on two A100s)
-costs **2.0 SU per hour held**. A three-hour afternoon of coding is 6.0 SU
-regardless of how many requests you send, unless your request volume is high enough
-for the token term to exceed the floor.
+The everyday number: a coding session on two GPUs costs **2.0 SU per hour held** on
+A100s. A three-hour afternoon of coding is 6.0 SU regardless of how many requests you
+send, unless your request volume is high enough for the token term to exceed the floor.
+
+Since 2026-08-19 the coding default is `qwen3.8_27B`, which runs on two H100s and has
+**no measured rate record yet** — its sessions bill the reservation floor for the GPUs
+held, with no token-metered component at all. The 2.0 SU/h figure above was measured for
+the retired `qwen2.5_coder_32B` on two A100s and is kept as the closest reference point
+until a `bench_billing.py` run fills in a record for the current model.
 
 ## Edge cases
 

@@ -26,11 +26,9 @@ MODELS_ROOT = "/project/rcc/mehta5/vllm/models"
 # Slurm job-name (`model_key:port`), the rate table, and usage logs.
 MODEL_REGISTRY = {
     "qwen2.5_72B": f"{MODELS_ROOT}/Qwen2.5-72B-Instruct",   # Phase-1 production model (general chat)
-    "qwen2.5_coder_32B": f"{MODELS_ROOT}/Qwen2.5-Coder-32B-Instruct",  # coding model (TP=2 footprint)
     "qwen3_4b": f"{MODELS_ROOT}/Qwen3-4B",                  # single-GPU benchmark anchor
-    "qwen3_32B": f"{MODELS_ROOT}/Qwen3-32B",               # thinking model (BF16, TP=2 A100)
     "qwen3.5_122B": f"{MODELS_ROOT}/Qwen3.5-122B-A10B-FP8", # MoE, native FP8 -- serves TP=2 on 2xH200 (measured, job 53069683)
-    "glm5.2_753B": f"{MODELS_ROOT}/GLM-5.2-FP8",            # MoE 753B, native FP8 -- needs 2+ H200 nodes; see note below
+    "qwen3.8_27B": f"{MODELS_ROOT}/Qwen3.8-27B",           # coding INCUMBENT -- dense 27.8B BF16, hybrid GDN+attn
     "llama3.1_70B": f"{MODELS_ROOT}/Meta-Llama-3.1-70B-Instruct",  # served, behind a license ack
     "qwen2.5_0.5B": f"{MODELS_ROOT}/Qwen2.5-0.5B-Instruct", # smoke test only -- never a billing ref
 }
@@ -66,14 +64,42 @@ MODEL_REGISTRY = {
 #     --export=ALL,MODEL_DIR=/project/rcc/mehta5/vllm/models/Qwen3.5-122B-A10B-FP8,\
 #   SERVED_NAME=bench-qwen35-122b,TP=2,PORT=8412 tools/serve_cu129.sbatch
 #
-# glm5.2_753B is registered so the key, rate table, and staging tooling can refer
-# to it, but it cannot be served at all today: 755 GB of FP8 weights exceed one
-# H200 node (4 x 141 GB = 564 GB), so it needs the multi-node launcher path that
-# is not built, and the installed vLLM has no GlmMoeDsaForCausalLM support (a
-# vLLM upgrade is required first). Do not add it to PHASE1_SERVED and do not
-# `start --force` it -- the job would reserve nodes, fail on load, and bill the
-# floor.
-PHASE1_SERVED = {"qwen2.5_72B", "qwen2.5_coder_32B", "qwen3_4b", "qwen3_32B", "llama3.1_70B"}
+# REMOVED 2026-08-19: glm5.2_753B (GLM-5.2-FP8, 704 GB) and DeepSeek-V4-Flash were
+# deleted from disk. GLM never served a token and structurally could not: 755 GB of FP8
+# weights exceed one 4xH200 node (564 GB), the multi-node launcher does not exist, and
+# _discover_servers_from_squeue() skips multi-node nodelists anyway. V4-Flash was a
+# measured Gate-1 NO-GO (job 53069684, Marlin FP4 repack vs driver 535). Both are
+# ungated re-downloads; configs, index, and licenses are preserved under
+# _scratch/tombstones/ with a restage recipe.
+# qwen3.8_27B is the coding INCUMBENT as of 2026-08-19, replacing qwen2.5_coder_32B.
+# Basis: frozen 60-problem LiveCodeBench subset, greedy, thinking-off, identical harness
+# and serve env -- 50.00% (30/60) vs the incumbent's 26.67% (16/60), +23.33 pts (score job
+# 53531932). Best of six candidates measured; beats the 122B (45.00%) at 44% of its
+# footprint, though that 5-pt gap is inside the n=60 noise band. Serves BF16 TP=2 on
+# H100 (jobs 53533204, 53534097) and H200 (53440093, 53496745) under vLLM 0.26.0.
+# Tool calling VERIFIED working with --tool-call-parser qwen3_coder (job 53534097);
+# hermes silently fails on it, so launch_ai_session.sh routes the parser by model key.
+# The launcher also routes this key's ENV_PATH to vllm-serve-cu129 -- 0.10.2 cannot load
+# Qwen3_5ForConditionalGeneration and a bare add here without that routing would
+# floor-bill a doomed load.
+# CAVEAT: no rate_table.json row yet, so sessions bill the reservation FLOOR
+# (metering.py:322 "UNRATED"), same as qwen3_32B. A bench_billing.py run on the cu129
+# env is owed before this model carries real token-metered billing.
+# qwen2.5_coder_32B stays served (and stays the frozen benchmark baseline anchor).
+# RETIRED 2026-08-19: qwen2.5_coder_32B and qwen3_32B removed from the registry and
+# deleted from disk, superseded by qwen3.8_27B (50.00% vs 26.67% on the frozen LCB-60).
+# qwen3.8_27B is now the SOLE coding model. Consequences, recorded deliberately:
+#   - The frozen benchmark baseline's weights are gone. The 26.67% anchor survives only
+#     as benchmark/frozen_baseline/stage2_score_bench-coder32b.json, which
+#     score_stage2.sbatch still reuses for adjudication -- but it can never be
+#     regenerated or re-run under a new condition (subset, decode, thinking mode).
+#   - rate_table.json retains inert rows for both keys. They are measurement provenance;
+#     nothing looks them up now that the keys are unserved. Left deliberately.
+#   - qwen2.5_coder_32B was the only model an external user (ndtrung) had ever run, and
+#     one of three models with an honest (non-floor) billing rate. qwen3.8_27B has no
+#     rate row yet, so coding sessions now bill the reservation FLOOR until a
+#     bench_billing.py run on the cu129 env fills one. That measurement is owed.
+PHASE1_SERVED = {"qwen2.5_72B", "qwen3_4b", "llama3.1_70B", "qwen3.8_27B"}
 
 KNOWN_TIERS = ("h200", "h100", "l40s", "l40", "a100", "a40", "v100", "rtx6000")
 

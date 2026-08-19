@@ -22,7 +22,7 @@ first if necessary.
 | 4 | Stop the session when finished | `ai-session stop` | Login node |
 
 !!! warning "A running session consumes SU whether or not you send requests"
-    The default coding session (`qwen2.5_coder_32B` on 2 A100 GPUs) bills a floor of
+    The default coding session (`qwen3.8_27B` on 2 A100 GPUs) bills a floor of
     2.0 SU per hour of wall-clock time; stop it with `ai-session stop` as soon as
     you stop working. Rates and the billing formula are on
     [Billing and Service Units](../billing.md).
@@ -44,8 +44,8 @@ eval "$(ai-session env)"
 OPENAI_API_BASE=$AISESSION_BASE_URL \
 OPENAI_API_KEY=$AISESSION_API_KEY \
 aider \
-  --model openai/qwen2.5_coder_32B \
-  --weak-model openai/qwen2.5_coder_32B \
+  --model openai/qwen3.8_27B \
+  --weak-model openai/qwen3.8_27B \
   --model-metadata-file "$AISESSION_HOME/ai-session/aider_model_metadata.json" \
   --edit-format diff --analytics-disable
 ```
@@ -71,7 +71,7 @@ The API base must include the `/v1` suffix.
 
 The metadata file splits the 32768-token window as 28000 input tokens and 4096
 output tokens, so prompt plus generated tokens cannot exceed the window. It carries
-entries for `qwen2.5_coder_32B`, `qwen2.5_72B`, `qwen3_4b`, and `qwen3_32B`; if you
+entries for `qwen3.8_27B`, `qwen2.5_72B`, and `qwen3_4b`; if you
 started the session
 with `--model qwen2.5_72B`, substitute `openai/qwen2.5_72B` in both `--model` and
 `--weak-model`.
@@ -104,8 +104,8 @@ uncommitted for review), and `--message`:
 OPENAI_API_BASE=$AISESSION_BASE_URL \
 OPENAI_API_KEY=$AISESSION_API_KEY \
 aider \
-  --model openai/qwen2.5_coder_32B \
-  --weak-model openai/qwen2.5_coder_32B \
+  --model openai/qwen3.8_27B \
+  --weak-model openai/qwen3.8_27B \
   --model-metadata-file "$AISESSION_HOME/ai-session/aider_model_metadata.json" \
   --edit-format diff --analytics-disable \
   --yes-always --no-auto-commit \
@@ -119,8 +119,8 @@ Standard input can be piped in, for example to analyze a log file:
 ```bash
 cat build.log | \
 OPENAI_API_BASE=$AISESSION_BASE_URL OPENAI_API_KEY=$AISESSION_API_KEY \
-aider --model openai/qwen2.5_coder_32B \
-  --weak-model openai/qwen2.5_coder_32B \
+aider --model openai/qwen3.8_27B \
+  --weak-model openai/qwen3.8_27B \
   --model-metadata-file "$AISESSION_HOME/ai-session/aider_model_metadata.json" \
   --analytics-disable \
   --message "explain the traceback in this log and propose a fix"

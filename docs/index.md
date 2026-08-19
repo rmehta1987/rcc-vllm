@@ -84,7 +84,7 @@ the preset's default.
 
 | Preset | Model key | Weights | Use | Context (tokens) | GPUs it runs on | License |
 |---|---|---|---|---:|---|---|
-| `code` | `qwen2.5_coder_32B` | Qwen2.5-Coder-32B-Instruct | Coding | 32768 | 2 x A100-80GB | Apache-2.0 |
+| `code` | `qwen3.8_27B` | Qwen3.8-27B | Coding | 32768 | 2 x H100-80GB | Apache-2.0 |
 | `chat` | `qwen2.5_72B` | Qwen2.5-72B-Instruct | General chat | 8192 | 4 x A100-80GB | Qwen (Tongyi) community license |
 | `fast` | `qwen3_4b` | Qwen3-4B | Small and fast; lowest cost | 8192 | 1 x A100 | Apache-2.0 |
 
@@ -95,9 +95,10 @@ hour) — and move to the coder or 72B model once the workflow works. The larger
 models are more capable, and switching requires no change to the client
 configuration.
 
-A Qwen3-32B checkpoint (Apache-2.0) is also available with `--model qwen3_32B`: a
-thinking model whose chain of thought is returned separately from the answer,
-served on two A100s. A Meta-Llama-3.1-70B-Instruct checkpoint (Llama 3.1 Community
+The coding model is itself a thinking model: its chain of thought is returned
+separately from the answer, and reasoning depth is adjustable per request via
+`reasoning_effort` (`low`, `medium`, or `xhigh` — `xhigh` is the model's default).
+It also accepts images. A Meta-Llama-3.1-70B-Instruct checkpoint (Llama 3.1 Community
 License plus an Acceptable Use Policy) is also available to any user with
 `--model llama3.1_70B`, once you record a one-time license acknowledgment (the
 Llama 3.1 Community License permits this use, with conditions; see
@@ -105,13 +106,10 @@ Llama 3.1 Community License permits this use, with conditions; see
 checkpoint (Apache-2.0) is staged for smoke tests only and is not offered for user
 sessions.
 
-Larger models are staged but not yet servable. Qwen3.5-122B-A10B (FP8) is
-registered and its weights are on disk; it becomes available once it passes
-validation on the cluster's H200 nodes. It is a vision-language model, so it
-will be the first served model to accept images alongside text. GLM-5.2 (FP8),
-a text-only model, is likewise registered with its weights on disk, but it
-needs multi-node H200 serving that is not yet built; GLM-5.1 comes later. The H200 hardware itself is already on the cluster;
-what is pending is the serving work, not the machines.
+One larger model is staged but not yet offered. Qwen3.5-122B-A10B (FP8) is
+registered and validated — it serves at TP=2 on two H200s — but is not in the served
+set until it has a measured billing rate. The H200 hardware itself is already on the
+cluster; what is pending is the rate measurement, not the machines.
 
 Guidance on choosing between the served models is on the
 [coding overview](coding/overview.md) page, and a rough capability frame of

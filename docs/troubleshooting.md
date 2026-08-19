@@ -52,7 +52,7 @@ Step 3 exercises the full path to the GPU. Expected output is an OpenAI-style
 model list naming the model you started:
 
 ```
-{"object":"list","data":[{"id":"qwen2.5_coder_32B", ...}]}
+{"object":"list","data":[{"id":"qwen3.8_27B", ...}]}
 ```
 
 ## `Unknown context window size`
@@ -116,13 +116,20 @@ No error is raised on either end. This is the measured failure mode (verified
 2026-07-03, opencode 1.14.41): the server log contained zero tool-call parser
 exceptions while every out-of-the-box task run failed.
 
-**Cause.** The served Qwen2.5-Coder-32B-Instruct checkpoint does not emit the
-`<tool_call>` marker tokens that the server's tool-call parser matches, so the
-tool JSON streams back as ordinary assistant text that the agent ignores.
+**Cause (historical).** The coding model at the time, Qwen2.5-Coder-32B, did not emit
+the `<tool_call>` marker tokens that the server's tool-call parser matched, so the tool
+JSON streamed back as ordinary assistant text that the agent ignored.
 
-**Fix.** Create the `AGENTS.md` workaround file in the root of the repository
-you are editing; its exact content and the reasoning behind it are on the
-[opencode page](coding/opencode.md).
+**Fixed as of 2026-08-19.** The coding default is now `qwen3.8_27B`, which emits tool
+calls natively. Two things had to change together, and both are now in place: the model
+emits calls in an XML form (`<tool_call><function=NAME><parameter=K>v</parameter></function></tool_call>`),
+and the launcher selects the matching `qwen3_coder` parser for it rather than `hermes`,
+which cannot parse that form. Measured 2026-08-19 (job 53534097): with `hermes` the calls
+came back unparsed; with `qwen3_coder` they parsed correctly.
+
+**If you still see this,** you do not need the old `AGENTS.md` workaround — it was written
+for a model that never emitted the tags and is unnecessary, and potentially counterproductive,
+for the current model. Check instead that the session was started with `--agent`.
 
 **Check.** Also confirm the session was started with tool calling enabled — it
 is off by default. Tool calling is on only if you started with:
@@ -143,7 +150,7 @@ and text diffs without function calling, against the same endpoint.
 **Symptom.** The start command exits immediately with:
 
 ```
-ERROR: model 'qwen2.5_coder_32B' is not fully staged at: <path>
+ERROR: model 'qwen3.8_27B' is not fully staged at: <path>
        (missing config.json/*.safetensors, or a download is still in flight).
 ```
 

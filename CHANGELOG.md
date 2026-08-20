@@ -2,6 +2,91 @@
 
 ## Unreleased — model-refresh (branch milestone/model-refresh)
 
+### CUDA graphs recovered — 3.9x decode on the coding model (2026-08-20)
+
+`--enforce-eager` was the wrong workaround. It was adopted on 2026-08-19 to dodge a crash in
+the FlashInfer allreduce+RMSNorm fusion, but in vLLM 0.26.0 it disables BOTH torch.compile
+and CUDA graphs ("equivalent to -cc.mode=none -cc.cudagraph_mode=none") — so we discarded
+Inductor and every unrelated fusion to avoid one pass. NVIDIA documents the targeted fix for
+exactly this hardware class (NVLink-bridged H100/H200, TP>=2, still present in 0.26.0):
+
+    --compilation-config '{"pass_config":{"fuse_allreduce_rms":false}}'
+
+MEASURED on qwen3.8_27B, 2xH100 NVL, TP=2 (job 53729212), with `fuse_allreduce_rms: False`,
+`cudagraph_mode: FULL_AND_PIECEWISE` and ZERO illegal-memory events confirmed in the log:
+
+| | --enforce-eager | fusion disabled | change |
+|---|---|---|---|
+| prefill | 8969.3 | 11827.9 | +31.9% |
+| decode | 894.7 | **3492.7** | **+290%** |
+| alpha | 10.02 | 3.39 | back in family |
+| SU/1k out | 0.001242 | **0.000318** | **3.9x cheaper** |
+
+The alpha of 10.02 flagged in yesterday's entry as "wildly out of family" was exactly the
+symptom it looked like. **qwen3.8_27B on h100 is now the cheapest capable coding
+configuration in the fleet** (0.000318), ahead of gemma4_31B on a40 (0.000797) despite 4x
+the tier weight. The h100 rate row is re-measured under this flag and the launcher passes it,
+because metering.py invalidates a record whose serve flags differ from the running engine.
+
+**The pin is also now Hopper-only.** `config/vllm.py::enable_allreduce_rms_fusion` requires
+`is_device_capability(90)` or family 100, so A100 (sm80) and A40 (sm86) can never reach the
+failing pass. The previous family-wide pin cost us CUDA graphs on Ampere for a bug that
+cannot occur there — which means **both gemma4_31B rate rows (a40, a100) are understated**,
+their alphas of 6.60 and 9.92 showing the same signature. The re-measure was queued and
+cancelled when the campaign closed; those two rows remain conservative.
+
+**Qwen3.5-122B also runs with CUDA graphs** (job 53742253, PASS, zero illegal-memory). Its
+eager pin was pre-emptive and is likewise unnecessary; it needs only `--max-num-seqs 384`,
+because each decode sequence of a hybrid Gated-DeltaNet model consumes one Mamba cache block
+and 1024 > the 389 available. Not yet unpinned in the launcher.
+
+### QAT 4-bit Gemma serves on ONE A40 (2026-08-20)
+
+`google/gemma-4-31B-it-qat-w4a16-ct` staged (22 GB, Gate-D PASS): compressed-tensors
+pack-quantized, 4-bit, group_size 32, vision tower and lm_head in the ignore list.
+Quantization-AWARE training, so quality should be near-lossless — but Google publishes NO
+quantized-vs-BF16 benchmark, so that is an assumption, not a measurement.
+
+Gate-1 PASS at TP=1 on a single A40 (job 53742254): `Using MarlinLinearKernel for
+CompressedTensorsWNA16`, weights 18.7 GiB, **KV cache 16.25 GiB = 45,488 tokens**. Against
+BF16 Gemma on TWO A40s (51,325 tokens), that is nearly the same cache on half the hardware:
+
+| config | GPUs | floor | KV tokens |
+|---|---|---|---|
+| gemma4_31B BF16, 2x A40 | 2 | 1.0 SU/h | 51,325 |
+| **QAT 4-bit, 1x A40** | **1** | **0.5 SU/h** | 45,488 |
+
+A first attempt OOM'd; the cause was multimodal profiling (vLLM allocates dummy image/video
+inputs at startup), fixed by `--language-model-only`. Marlin kernel selection was never the
+problem — that was the real uncertainty and it is settled: 4-bit compressed-tensors works on
+sm86. NOT wired in: quality is unmeasured, and the frozen LCB-60 gauntlet is the only
+acceptable evidence before a 0.5 SU/h tier is offered to users.
+
+### GPU targets are now an allowlist, not a preference order (2026-08-20)
+
+An audit of where jobs actually landed found **103 historical jobs on pi-gagalli and
+pi-lgagliardi hardware — 85 of them on H200 nodes** — all routed through the `test`
+partition, which spans nearly the whole cluster, without ever naming those partitions. The
+H200 rule alone did not prevent this; five A100-80GB landings on gagalli nodes happened on
+2026-08-19 while that rule was in force.
+
+CLAUDE.md now permits exactly three GPU targets: `pedramh-gpu` (an account the user holds),
+`beagle3` (consortium, nobody's), and `gpu` (AllowAccounts=ALL, one usable node). `test` is
+CPU-only from here. Also forbidden: H200 without per-job permission, another group's nodes
+even when idle, and the `beagle3-prio` QOS.
+
+**`--qos=beagle3` is not sufficient on its own** — the site's job-submit plugin overrides it
+back to `beagle3-prio` (priority 100,000,000 vs 0). The `scontrol update jobid=<id>
+QOS=beagle3` correction after submission is mandatory, not a fallback. Caught by running the
+allowlist check against our own in-flight jobs.
+
+### Harness
+
+`tools/serve_cu129.sbatch` gains an `EXTRA_SERVE_ARGS` passthrough. Without it a 122B job was
+submitted with CUDA graphs ON and the broken fusion ALSO on — it would have crashed exactly
+as the original bug does and read as "the vendor workaround does not help this model".
+Cancelled before it ran.
+
 ### Gemma-4-31B-it added as a SECOND coding option (2026-08-20)
 
 Not a replacement. `qwen3.8_27B` remains the `code` preset default; Gemma is reached with

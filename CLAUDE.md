@@ -2,66 +2,63 @@
 
 ## Hardware restrictions
 
-HARD RULE -- H200 nodes are OFF LIMITS by default.
+HARD RULE -- GPU work runs ONLY on the three targets below. This is an ALLOWLIST, not a
+preference order. If the work does not fit one of them, STOP and ask the user.
 
-Do NOT submit, allocate, or reserve any job on an H200 node. This covers
-midway3-0600 through midway3-0606 (the entire H200 fleet: partitions test,
-jevans-gpu, lgagliardi-gpu2, gagalli-gpu), and any `--constraint=H200`.
+| # | target | hardware | account / qos | why it is allowed |
+| --- | --- | --- | --- | --- |
+| 1 | `pedramh-gpu` | midway3-0423, 4x H100 80GB | `pi-pedramh` | an account the user actually holds |
+| 2 | `beagle3` | A100 40GB (beagle3-0001..0022), A40 (beagle3-0023..0044) | `rcc-staff` or `beagle3-users`, **`--qos=beagle3`** | consortium hardware, owned by no single group |
+| 3 | `gpu` | midway3-0294 (A100 40GB) only | `rcc-staff`, `--qos=gpu` | `AllowAccounts=ALL`, genuinely open to everyone |
 
-If a task appears to require an H200, STOP and ask the user for explicit
-permission first, naming the node count, GPU count, and wall time you intend to
-request. Do not submit while waiting for the answer. A previous approval for one
-H200 job does NOT carry over to the next one -- ask every time.
+CPU-only work (scoring, adjudication, analysis) goes to `caslake`, which has no GPU nodes.
 
-Use instead, in order of preference:
+### Everything else is off limits
 
-| target | hardware | account | notes |
-| --- | --- | --- | --- |
-| `pedramh-gpu` | midway3-0423, 4x H100 80GB | `pi-pedramh` | default GPU target |
-| `beagle3` | A100 40GB (beagle3-0001..0022), A40 (beagle3-0023..0044) | `rcc-staff` or `beagle3-users` | |
-| `test` | mixed; H200s live here too | `rcc-staff`, `--qos=test` | DefaultTime is 00:05:00 -- ALWAYS pass `--time`. Add `--exclude=midway3-[0600-0606]` |
-| `caslake` | CPU only, no GPUs at all | `rcc-staff` | scoring, adjudication, analysis |
+**Do NOT use the `test` partition for GPU work.** It spans almost the whole cluster, so a
+bare `--constraint` there silently lands on hardware another research group owns, bypassing
+their partition and account entirely. It looks like "a general node of type X"; it is not.
+This is how 103 historical jobs reached pi-gagalli and pi-lgagliardi hardware -- 85 of them
+on H200 nodes -- without ever naming those partitions. `test` is still fine for CPU jobs.
 
-Add `--exclude=midway3-[0600-0606]` to GPU submissions as a belt-and-braces guard
-even on partitions that contain no H200.
+**Do NOT use H200 at all.** midway3-0600..0606, and any `--constraint=H200`. If a task
+appears to require one, STOP and ask, naming node count, GPU count, and wall time. Do not
+submit while waiting. Approval for one H200 job does NOT carry to the next -- ask every time.
 
-### Do not reach PI-owned nodes through a broad partition
+**Do NOT target another group's nodes even when they are idle.** Idle is not available.
+midway3-0558/0559 (schmidt / pi-dfreedman) and midway3-0377/0378 (pi-gagalli) are A100 80GB
+and often free; they are still theirs. Ask the user first, every time.
 
-The H200 rule above is the specific case of a general one. A staff-accessible partition
-spans most of the cluster, so submitting there with a `--constraint` can silently land on
-hardware another research group owns, bypassing their partition and account entirely. It
-looks like "a general node of type X"; it is not.
+**Do NOT use an elevated QOS to jump the queue on shared hardware.** `beagle3` defaults an
+`rcc-staff` job to `beagle3-prio` (priority 100,000,000 vs the normal 0). Pass `--qos=beagle3`
+explicitly, or fix a submitted job with `scontrol update jobid=<id> QOS=beagle3`.
 
-**Before submitting any GPU job, check who owns the nodes you could land on:**
+### Node ownership on this cluster, as of 2026-08-20
+
+| nodes | GPU | owner | usable? |
+|---|---|---|---|
+| midway3-0423 | H100 80GB | pi-pedramh | **YES** -- an account the user holds |
+| beagle3-0001..0022 | A100 40GB | nobody (consortium) | **YES** via `beagle3` |
+| beagle3-0023..0044 | A40 48GB | nobody (consortium) | **YES** via `beagle3` |
+| midway3-0294 | A100 40GB | nobody (open `gpu`) | **YES** via `gpu` |
+| midway3-0600..0606 | H200 | pi-jevans, pi-lgagliardi, pi-gagalli | no -- ask every time |
+| midway3-0377, 0378 | A100 80GB | pi-gagalli | no -- ask first |
+| midway3-0558, 0559 | A100 80GB | schmidt / pi-dfreedman | no -- ask first |
+| midway3-0293 | A100 40GB | pi-lgagliardi | no -- ask first |
+| midway3-0372, 0385, 0426, 0432 | H100 | depablo / jevans / schmidt / sriesenfeld | no -- ask first |
+| midway3-0277..0286 | V100, RTX6000 | nobody (open `gpu`) | no -- fp16-only, excluded (cc 7.5) |
+
+Verify before submitting if unsure:
 
 ```bash
 scontrol show node <node> | grep -oP 'Partitions=\K[^ ]+'
 ```
 
-A node listed in only a broad partition is shared. A node ALSO listed in a `<pi>-gpu`
-partition belongs to that group — do not target it without either an account you hold for
-it, or explicit user permission. Constrain the nodelist (`--nodelist`, `--exclude`) or
-submit to a partition whose hardware is genuinely shared.
+A node listed ONLY in a broad partition is shared. A node ALSO listed in a `<pi>-gpu`
+partition belongs to that group.
 
-Known ownership on this cluster, as of 2026-08-19:
-
-| nodes | GPU | owner |
-|---|---|---|
-| midway3-0600..0606 | H200 | pi-jevans, pi-lgagliardi, pi-gagalli — **off limits, see above** |
-| midway3-0377, 0378 | A100 80GB | pi-gagalli |
-| midway3-0558, 0559 | A100 80GB | schmidt / pi-dfreedman, ai4s-hackathon |
-| midway3-0423 | H100 | pi-pedramh — **an account the user holds; OK to use** |
-| midway3-0294 | A100 40GB | nobody — in the open `gpu` partition |
-| beagle3-0001..0044 | A100 40GB / A40 | nobody — consortium hardware |
-
-Genuinely unowned GPU capacity is: the `gpu` partition (open to all, but 10 of its 11
-nodes are V100/RTX6000, which are fp16-only and excluded from this service) and the
-`beagle3` partition. Prefer those, plus `pedramh-gpu`, and expect to queue.
-
-Do not use an elevated QOS to jump that queue on shared hardware. `beagle3` defaults an
-`rcc-staff` job to `beagle3-prio` (priority 100,000,000 vs the normal 0); pass
-`--qos=beagle3` explicitly, or fix a submitted job with
-`scontrol update jobid=<id> QOS=beagle3`.
+Add `--exclude=midway3-[0600-0606]` to GPU submissions as a belt-and-braces guard even on
+partitions that contain no H200.
 
 ## Slurm job fences (these prevent real billing harm)
 

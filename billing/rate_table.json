@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "populated -- 7 record(s); last updated 2026-08-20T09:53:16-0500",
+  "status": "populated -- 7 record(s); last updated 2026-08-20T10:46:25-0500",
   "currency": "1 SU = 1 A100-GPU-hour",
   "record_schema": {
     "model_key": "registry key, e.g. qwen2.5_72B (matches server.py agent_paths)",
@@ -383,15 +383,15 @@
       "model_key": "qwen3.8_27B",
       "gpu_tier": "h100",
       "tp": 2,
-      "prefill_tps": 8969.31,
-      "decode_tps": 894.71,
-      "alpha_empirical": 10.0249,
-      "ttft_p50_ms": 2347.7849904447794,
-      "ttft_p95_ms": 5030.6835626252,
-      "tpot_p50_ms": 74.48435110202216,
-      "tpot_p95_ms": 77.22686177279996,
-      "su_per_1k_in": 0.00012387920851292874,
-      "su_per_1k_out": 0.0012418711644733725,
+      "prefill_tps": 11827.9,
+      "decode_tps": 3492.74,
+      "alpha_empirical": 3.3864,
+      "ttft_p50_ms": 2867.4202412366867,
+      "ttft_p95_ms": 4566.025420557708,
+      "tpot_p50_ms": 21.127748600190866,
+      "tpot_p95_ms": 24.73720040813876,
+      "su_per_1k_in": 9.393987185370003e-05,
+      "su_per_1k_out": 0.00031812025810040723,
       "provenance": {
         "vllm_version": "0.26.0",
         "dtype": "bfloat16",
@@ -409,9 +409,10 @@
           "32768",
           "--gpu-memory-utilization",
           "0.9",
-          "--enforce-eager"
+          "--compilation-config",
+          "{\"pass_config\":{\"fuse_allreduce_rms\":false}}"
         ],
-        "enforce_eager": true,
+        "enforce_eager": false,
         "max_model_len": 32768,
         "gpu_memory_utilization": 0.9,
         "gpu_name": "NVIDIA H100 NVL",
@@ -447,7 +448,7 @@
           "bench_output_tokens_sum": 264192,
           "note": "deltas >= bench sums (warmup/probe requests add a little)"
         },
-        "timestamp": "2026-08-19T12:50:48-0500"
+        "timestamp": "2026-08-20T10:46:25-0500"
       }
     },
     {

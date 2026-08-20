@@ -132,6 +132,10 @@ case "$(basename "$MODEL_DIR")" in
   *V4-Flash*|*DeepSeek-V4*|*deepseek-v4*) KV_CACHE_FLAG="--kv-cache-dtype fp8" ;;
 esac
 EAGER_FLAG=""; [ "$EAGER" = "1" ] && EAGER_FLAG="--enforce-eager"
+# Arbitrary extra serve args, e.g. the Hopper allreduce-fusion disable:
+#   EXTRA_SERVE_ARGS='--compilation-config {"pass_config":{"fuse_allreduce_rms":false}}'
+# Unquoted below so it word-splits into argv, matching how REASONING_FLAG/EAGER_FLAG behave.
+EXTRA_SERVE_ARGS="${EXTRA_SERVE_ARGS:-}"
 
 echo "=== $(date '+%F %T') node $(hostname) serving $SERVED_NAME (TP=$TP eager=$EAGER) ==="
 nvidia-smi --query-gpu=index,name,driver_version,memory.total --format=csv,noheader
@@ -163,7 +167,8 @@ SERVE_CMD=(vllm serve "$MODEL_DIR"
   --gpu-memory-utilization "$GPU_MEM_UTIL"
   ${REASONING_FLAG}
   ${KV_CACHE_FLAG}
-  ${EAGER_FLAG})
+  ${EAGER_FLAG}
+  ${EXTRA_SERVE_ARGS})
 
 if [ "${SMOKE:-0}" != "1" ] && [ "${BENCH:-0}" != "1" ]; then
   # Default, PROVEN behavior (jobs 52984938 / 52985604): pure serve; the time-box

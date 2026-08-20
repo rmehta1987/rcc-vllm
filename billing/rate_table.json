@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "populated -- 6 record(s); last updated 2026-08-20T08:41:40-0500",
+  "status": "populated -- 7 record(s); last updated 2026-08-20T09:53:16-0500",
   "currency": "1 SU = 1 A100-GPU-hour",
   "record_schema": {
     "model_key": "registry key, e.g. qwen2.5_72B (matches server.py agent_paths)",
@@ -27,6 +27,77 @@
     }
   },
   "records": [
+    {
+      "model_key": "gemma4_31B",
+      "gpu_tier": "a100",
+      "tp": 2,
+      "prefill_tps": 3336.88,
+      "decode_tps": 336.21,
+      "alpha_empirical": 9.9249,
+      "ttft_p50_ms": 143387.73021101952,
+      "ttft_p95_ms": 169470.15670267865,
+      "tpot_p50_ms": 53.286413977436595,
+      "tpot_p95_ms": 54.6961445643871,
+      "su_per_1k_in": 0.0001664896434938612,
+      "su_per_1k_out": 0.001652396909742985,
+      "provenance": {
+        "vllm_version": "0.26.0",
+        "dtype": "bfloat16",
+        "w_gpu_at_measure": 1.0,
+        "serve_flags": [
+          "--served-model-name",
+          "gemma4_31B",
+          "--port",
+          "0",
+          "--tensor-parallel-size",
+          "2",
+          "--enable-prefix-caching",
+          "--trust-remote-code",
+          "--max-model-len",
+          "16384",
+          "--gpu-memory-utilization",
+          "0.9",
+          "--enforce-eager"
+        ],
+        "enforce_eager": true,
+        "max_model_len": 16384,
+        "gpu_memory_utilization": 0.9,
+        "gpu_name": "NVIDIA A100-PCIE-40GB",
+        "node": "beagle3-0010.rcc.local",
+        "profiles": {
+          "prefill_heavy": {
+            "name": "prefill_heavy",
+            "input_len": 2048,
+            "output_len": 8,
+            "num_prompts": 256,
+            "max_concurrency": 64
+          },
+          "decode_heavy": {
+            "name": "decode_heavy",
+            "input_len": 64,
+            "output_len": 1024,
+            "num_prompts": 128,
+            "max_concurrency": 64
+          },
+          "balanced": {
+            "name": "balanced",
+            "input_len": 1024,
+            "output_len": 512,
+            "num_prompts": 256,
+            "max_concurrency": 64
+          }
+        },
+        "seed": 1234,
+        "metrics_crosscheck": {
+          "metrics_prompt_tokens_delta": 794624.0,
+          "metrics_generation_tokens_delta": 264192.0,
+          "bench_input_tokens_sum": 794624,
+          "bench_output_tokens_sum": 264192,
+          "note": "deltas >= bench sums (warmup/probe requests add a little)"
+        },
+        "timestamp": "2026-08-20T09:53:16-0500"
+      }
+    },
     {
       "model_key": "gemma4_31B",
       "gpu_tier": "a40",

@@ -29,11 +29,30 @@ is larger than a 40GB A100. MEASURED KV headroom at TP=2:
   a100 (40 GiB)  4.71 GiB KV = 26,342 tokens, 1.61x concurrency @16K, tier weight 1.0
 The a100 figure is tight: 1.61x means barely more than one full-context request at a time.
 
-**Rate row measured on a40** (job 53710675): prefill 2301.17, decode 348.67, alpha 6.60,
-su_per_1k_out 0.000797. Decode is modest — A40 is slow silicon, running eager, with limited
-batching — but the COST is the best in the fleet: ~36% cheaper per output token than
-`qwen3.8_27B` on h100 (0.000797 vs 0.001242) despite decoding 2.6x slower, because the tier
-weight is 0.5 against 2.0. Floor is 1.0 SU/h vs 4.0. An a100 row is still measuring.
+**Both rate rows measured, and A40 beats A100-40GB on EVERY axis for this model** — a real
+inversion of the usual tier ordering, worth recording because it is the opposite of what one
+would assume:
+
+| | a40 (job 53710675) | a100 40GB (job 53707470) |
+|---|---|---|
+| prefill | 2301.17 | 3336.88 |
+| decode | **348.67** | 336.21 |
+| alpha | 6.60 | 9.92 |
+| KV cache | **9.17 GiB / 51,325 tok** | 4.71 GiB / 26,342 tok |
+| su_per_1k_out | **0.000797** | 0.001652 |
+| floor | **1.0 SU/h** | 2.0 SU/h |
+
+A40 decodes FASTER despite weaker silicon, because an A40 card is 46 GiB against a 40 GiB
+A100 and this model needs 30.38 GiB/GPU — roughly double the cache left over, so at the
+benchmark's concurrency 64 the A40 keeps more requests in flight while the A100 thrashes.
+Note the a100 alpha of 9.92 (vs a40's 6.60) is the signature: prefill scales fine, decode is
+cache-starved. Combined with half the tier weight, A40 is **2.07x cheaper per output token**.
+
+Cost context across the fleet (SU per 1k output tokens): qwen3_4b a100 0.000054;
+qwen2.5_coder_32B a100 0.000331 (retired); **gemma4_31B a40 0.000797**; qwen2.5_72B a100
+0.000933; qwen2.5_72B h100 0.001227; qwen3.8_27B h100 0.001242; gemma4_31B a100 0.001652.
+Tier choice now matters more than model choice: the same Gemma is either the cheapest or
+nearly the dearest coding option depending purely on which card it lands on.
 
 **Thinking measured, not assumed** (job 53587542, new `tools/thinking_probe.{py,sbatch}`).
 The `gemma4` reasoning parser correctly separates the chain of thought into `reasoning`,

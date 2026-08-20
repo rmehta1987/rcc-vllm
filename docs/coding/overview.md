@@ -205,6 +205,7 @@ chain of thought is returned separately from the answer — visible in opencode 
 | `qwen3_4b` (cheapest; debugging, simple edits, tool calling) | 4B | 1 x A100-80GB | 22167 | 5114 | 1.0 SU/h |
 | `qwen3.8_27B` (default; thinking model, accepts images) | 27.8B | 2 x A100 | — | — | 2.0 SU/h |
 | `gemma4_31B` (alternative; thinking off by default) | 30.7B | 2 x A40 | 2301 | 349 | 1.0 SU/h |
+| `gemma4_31B` (on A100 40GB — slower *and* dearer, see below) | 30.7B | 2 x A100 | 3337 | 336 | 2.0 SU/h |
 | `qwen2.5_72B` | 72B | 4 x A100-80GB | 2914 | 1191 | 4.0 SU/h |
 
 
@@ -226,7 +227,22 @@ which suits hard problems.
 
 **Reach for `gemma4_31B`** when you want cheaper, faster turnaround. It scored higher on our
 own frozen coding benchmark and its A40 configuration is the least expensive way to run a
-capable coding model here. Note the benchmark ran with thinking disabled — Gemma's normal
+capable coding model here.
+
+!!! tip "For `gemma4_31B`, prefer A40 over A100 — it is faster *and* cheaper"
+    This inverts the usual ordering, so it is worth stating plainly. Measured at TP=2:
+
+    | | 2 × A40 | 2 × A100 40GB |
+    |---|---|---|
+    | decode | **349 tok/s** | 336 tok/s |
+    | KV cache | **9.17 GiB** (51,325 tokens) | 4.71 GiB (26,342 tokens) |
+    | cost per 1k output tokens | **0.000797 SU** | 0.001652 SU |
+    | reservation floor | **1.0 SU/h** | 2.0 SU/h |
+
+    An A40 card is 46 GiB against a 40 GiB A100, and this model needs 30.4 GiB per GPU — so
+    the A40 has roughly double the room left for cache. That lets it keep more requests in
+    flight, which more than offsets its slower silicon. Combined with half the GPU-tier
+    charge, A40 works out **2.1× cheaper per token**. Pass `CONSTRAINT=a40` to pin it. Note the benchmark ran with thinking disabled — Gemma's normal
 mode, but not Qwen's — so the gap flatters Gemma somewhat.
 
 ```bash

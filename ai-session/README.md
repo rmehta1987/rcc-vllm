@@ -125,7 +125,7 @@ commands.
 
 - Model weights under `/project/rcc/mehta5/vllm/models/`. Currently staged:
   Qwen2.5-Coder-32B-Instruct (coding default), Qwen2.5-72B-Instruct, Qwen3-4B,
-  Meta-Llama-3.1-70B-Instruct, Qwen2.5-0.5B-Instruct.
+  Qwen2.5-0.5B-Instruct.
 - Run the CLI from the `vllm-probe` environment:
   `module load python/miniforge-25.3.0 && mamba activate /project/rcc/mehta5/conda-envs/vllm-probe`.
 

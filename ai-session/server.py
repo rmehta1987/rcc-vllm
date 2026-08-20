@@ -27,18 +27,23 @@ MODELS_ROOT = "/project/rcc/mehta5/vllm/models"
 MODEL_REGISTRY = {
     "qwen2.5_72B": f"{MODELS_ROOT}/Qwen2.5-72B-Instruct",   # Phase-1 production model (general chat)
     "qwen3_4b": f"{MODELS_ROOT}/Qwen3-4B",                  # single-GPU benchmark anchor
-    "qwen3.5_122B": f"{MODELS_ROOT}/Qwen3.5-122B-A10B-FP8", # MoE, native FP8 -- serves TP=2 on 2xH200 (measured, job 53069683)
+    "qwen3.5_122B": f"{MODELS_ROOT}/Qwen3.5-122B-A10B-FP8", # MoE, native FP8 -- serves TP=2 on 2xH200 (53069683) AND 2xH100 NVL (53538328)
     "qwen3.8_27B": f"{MODELS_ROOT}/Qwen3.8-27B",           # coding INCUMBENT -- dense 27.8B BF16, hybrid GDN+attn
-    "llama3.1_70B": f"{MODELS_ROOT}/Meta-Llama-3.1-70B-Instruct",  # served, behind a license ack
     "qwen2.5_0.5B": f"{MODELS_ROOT}/Qwen2.5-0.5B-Instruct", # smoke test only -- never a billing ref
 }
 
 # The models served to users (others are for benchmarking / smoke). ai_session.py
-# rejects start requests for keys outside this set. qwen2.5_coder_32B is the coding-
-# client default (code-specialized, half the GPUs of 72B). qwen3_32B is a thinking
-# model (Qwen3 family; served with --reasoning-parser qwen3). llama3.1_70B is served
-# to any user but gated behind a one-time license acknowledgment (see _LICENSE_GATED
-# in ai_session.py). Floors bill on GPU tier like every other model.
+# rejects start requests for keys outside this set. qwen3.8_27B is the coding-client
+# default (see the note below) and is itself a thinking model, served with
+# --reasoning-parser qwen3 and the qwen3_coder tool parser.
+#
+# RETIRED 2026-08-19: llama3.1_70B (Meta-Llama-3.1-70B-Instruct) removed and deleted from
+# disk. It was served for months and recorded ZERO sessions in the central ledger, held no
+# rate_table row (so it billed the floor), and was a 2024 general model whose role the
+# newer qwen2.5_72B already fills. It was also the only licence-gated model here; the
+# _LICENSE_GATED machinery in ai_session.py is kept, unused, for the next such model.
+# NOTE: unlike every other model retired today, this one is NOT a free re-download --
+# Meta gates the weights behind an accepted licence on Hugging Face.
 #
 # qwen3.5_122B is VALIDATED but deliberately NOT in PHASE1_SERVED yet -- what remains
 # is a production cutover only the operator can decide, NOT a missing smoke test. The
@@ -99,7 +104,7 @@ MODEL_REGISTRY = {
 #     one of three models with an honest (non-floor) billing rate. qwen3.8_27B has no
 #     rate row yet, so coding sessions now bill the reservation FLOOR until a
 #     bench_billing.py run on the cu129 env fills one. That measurement is owed.
-PHASE1_SERVED = {"qwen2.5_72B", "qwen3_4b", "llama3.1_70B", "qwen3.8_27B"}
+PHASE1_SERVED = {"qwen2.5_72B", "qwen3_4b", "qwen3.8_27B"}
 
 KNOWN_TIERS = ("h200", "h100", "l40s", "l40", "a100", "a40", "v100", "rtx6000")
 

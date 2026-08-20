@@ -22,7 +22,6 @@ after `module load ai-session`.
 | `qwen3_4b` | Apache-2.0 | `<models>/Qwen3-4B/LICENSE` | Same as above. |
 | `qwen2.5_0.5B` | Apache-2.0 | `<models>/Qwen2.5-0.5B-Instruct/LICENSE` | Same as above. |
 | `qwen2.5_72B` | Qwen (Tongyi) community license | `<models>/Qwen2.5-72B-Instruct/LICENSE` | Retain the Qwen attribution notice; observe the "Built with Qwen" and large-scale-use terms below. |
-| `llama3.1_70B` | Llama 3.1 Community License + Acceptable Use Policy | `<models>/Meta-Llama-3.1-70B-Instruct/LICENSE` and `.../USE_POLICY.md` | Provide the license, display "Built with Llama", follow the Acceptable Use Policy, and record acceptance via the [acknowledgment gate](#serving-llama-31-the-acknowledgment-gate). |
 
 Models on the roadmap (see [Command Reference](reference.md#models)) will be added to
 this table with their licenses when they become servable: `qwen3.5_122B`
@@ -68,70 +67,24 @@ model is offered to others as a service:
 When you host `qwen2.5_72B` for your lab through ai-session, the practical duty is the
 attribution notice; the full and controlling terms are in the on-disk `LICENSE` above.
 
-## The Llama 3.1 license
+## The Llama 3.1 license (retired)
 
-`llama3.1_70B` (Meta-Llama-3.1-70B-Instruct) is released under the Llama 3.1 Community
-License Agreement, accompanied by a separate Acceptable Use Policy
-(`USE_POLICY.md`). Like the Qwen license, it is a community license with conditions,
-and it is the most restrictive of the models staged here. Serving it to others carries
-these obligations:
+`llama3.1_70B` (Meta-Llama-3.1-70B-Instruct) was retired on 2026-08-19 and its weights
+were removed. It was the only model here under a non-permissive licence, and the only one
+requiring a per-user acknowledgment before it could be served. No obligations remain: the
+model is not distributed, not served, and not staged.
 
-- Provide the license. If you distribute or make the Llama materials (or a product
-  using them) available to a third party, you must provide a copy of the Llama 3.1
-  Community License Agreement with it.
-- "Built with Llama". You must prominently display "Built with Llama" on a related
-  website, interface, or documentation when you make the model available.
-- Naming. If you use Llama to create, train, or improve another AI model that you
-  distribute, its name must begin with "Llama".
-- Attribution. Retain, in a `Notice` file, the line the license specifies: "Llama 3.1
-  is licensed under the Llama 3.1 Community License, Copyright © Meta Platforms, Inc.
-  All Rights Reserved."
-- Acceptable Use Policy. Your use, and the use by anyone you serve, must comply with
-  the Acceptable Use Policy in `USE_POLICY.md` (which prohibits a specific list of
-  harmful uses).
-- Large-scale commercial use. If the product or service using Llama exceeded 700
-  million monthly active users on the release date, you must request a license from
-  Meta. As with Qwen, this is noted only for completeness.
-
-Because these duties bind whoever offers the model, ai-session refuses to serve
-`llama3.1_70B` until you have acknowledged them, as described next.
-
-### Serving Llama 3.1: the acknowledgment gate
-
-`llama3.1_70B` is served to any user — the Community License permits this use,
-subject to the conditions above — but the first attempt to serve it is refused
-until you record that you accept the license. This is a deliberate, non-interactive gate so
-that scripts can satisfy it once and proceed: the serving command is refused until
-it is run with `ACCEPT_LLAMA_LICENSE=1` set in the environment. The first time:
-
-```bash
-ACCEPT_LLAMA_LICENSE=1 ai-session chat --model llama3.1_70B
-```
-
-Setting `ACCEPT_LLAMA_LICENSE=1` writes a one-time acceptance record to your per-user
-state directory at `<state-dir>/logs/licenses/<user>_llama3.1_70B.accepted`. The
-record holds the timestamp, your username, the model key, and the on-disk license
-path you accepted. Once it exists, later starts reuse it and need no environment
-variable.
-
-Without the acknowledgment, and with no record already on file, the start is
-refused before any GPU is reserved, and the refusal prints the on-disk license
-paths and the variable to set.
-
-The Apache-2.0 models are permissive and are not gated; `qwen2.5_0.5B` is a
-smoke-test checkpoint (not a user model) and needs no license acknowledgment.
-`qwen2.5_72B` is served and is not license-gated, but its attribution obligation
-above still applies when you host it for others.
+Every model the service now offers is Apache-2.0 except `qwen2.5_72B`, which is under the
+Qwen (Tongyi) community licence described above.
 
 ## Reading the authoritative text
 
 Every license summarized here is quoted in full in the on-disk file listed in the
 table. To read one directly on a login node (after `module load ai-session`), for
-example the Llama license and its Acceptable Use Policy:
+example the Qwen community licence:
 
 ```bash
-less "$AISESSION_HOME/models/Meta-Llama-3.1-70B-Instruct/LICENSE"
-less "$AISESSION_HOME/models/Meta-Llama-3.1-70B-Instruct/USE_POLICY.md"
+less "$AISESSION_HOME/models/Qwen2.5-72B-Instruct/LICENSE"
 ```
 
 If in doubt about an obligation for your specific use, read the on-disk license, which

@@ -80,15 +80,15 @@ directory.
 | Key | Model | Available | License |
 |---|---|---|---|
 | `qwen2.5_72B` | Qwen2.5-72B-Instruct | Yes (`chat` preset) | Qwen (Tongyi) community license |
-| `qwen3.8_27B` | Qwen3.8-27B | Yes (`code` preset, default); thinking model with `reasoning_effort` low/medium/xhigh; accepts images; H100 TP=2 | Apache-2.0 |
+| `qwen3.8_27B` | Qwen3.8-27B | Yes (`code` preset, default); thinking model with `reasoning_effort` low/medium/xhigh; accepts images; A100 TP=2 (H100 also works, via `CONSTRAINT=H100`) | Apache-2.0 |
 | `qwen3_4b` | Qwen3-4B | Yes (`fast` preset; also `code --model qwen3_4b` for cheap coding) | Apache-2.0 |
-| `qwen3.5_122B` | Qwen3.5-122B-A10B (FP8) | Validated on H200 (serves FP8 TP=2 on 2×H200, vLLM 0.26.0; measured Tier-B coding winner); vision-language (accepts images); production cutover operator-pending | Apache-2.0 |
-| `llama3.1_70B` | Meta-Llama-3.1-70B-Instruct | Yes (`--model llama3.1_70B`, after a one-time license acknowledgment) | Llama 3.1 Community License + Acceptable Use Policy |
+| `qwen3.5_122B` | Qwen3.5-122B-A10B (FP8) | **Requires H100 or H200** (FP8 will not run on Ampere) — see [Which GPUs each model needs](#which-gpus-each-model-needs). Validated at TP=2 on both Hopper tiers; awaiting a billing rate before it joins the served set | Apache-2.0 |
 | `qwen2.5_0.5B` | Qwen2.5-0.5B-Instruct | RCC staff only (smoke tests) | Apache-2.0 |
 
 The license terms and the obligations that apply when you serve these models to
-other people are set out on [Model licenses](licenses.md). Serving Llama 3.1
-additionally requires a one-time recorded acknowledgment.
+other people are set out on [Model licenses](licenses.md). Every model offered is
+Apache-2.0 except `qwen2.5_72B`, which is under the Qwen (Tongyi) community licence.
+No model requires a per-user acknowledgment any more.
 
 The coding model changed on 2026-08-19. `qwen3.8_27B` (Qwen3.8-27B, Apache-2.0)
 replaced `qwen2.5_coder_32B` as the `code` preset default on measured evidence: on a
@@ -102,15 +102,58 @@ and a vision-language model that accepts images and video alongside text — the
 served model here to do so. It serves BF16 at TP=2 under vLLM 0.26.0 (the
 `vllm-serve-cu129` env), which the launcher now selects automatically for this model
 family. Tool calling works natively with the `qwen3_coder` parser, also selected
-automatically.
+automatically — the `AGENTS.md` workaround the older coding model needed is no longer
+required, and should be removed if you still have one.
 
-Two caveats. It has no measured billing rate yet, so its sessions bill the reservation
-floor; and its 50.0% was measured with thinking disabled, which is not the model's
-default mode, so that figure is a lower bound on what it can do.
+It runs on **A100** by default (measured: 25.7 GiB of weights per GPU at TP=2, leaving
+44 GiB of KV cache — over a million tokens). A100 is the default rather than the faster
+H100 for a practical reason: H100 nodes on this cluster belong to individual research
+groups, so an H100 default would make the coding model unstartable for most users. Pass
+`CONSTRAINT=H100` if you have access to that tier and want it.
 
-`qwen3.5_122B` (Qwen3.5-122B-A10B, FP8) remains registered and serves FP8 at TP=2 on two
-H200s under the same environment, but is not in the served set; it needs a billing rate
-before users can start it.
+Three caveats worth knowing.
+
+1. **Billing.** Its measured rate record is for the H100 tier, so an A100 session bills
+   the reservation floor (GPU time held) with no token-metered component until an A100
+   record is measured. The A100 floor is half the H100 floor, so this is not a penalty.
+2. **Benchmark figure.** The 50.0% was measured with thinking *disabled*, which is not
+   this model's default mode. Treat it as a lower bound.
+3. **Serve configuration.** It runs with CUDA graphs disabled (`--enforce-eager`), set
+   automatically. With graphs enabled, vLLM selects a multi-node NVLink all-reduce kernel
+   that crashes during start-up on this hardware. The cost is decode throughput; the
+   alternative is a server that never becomes ready.
+
+### Which GPUs each model needs
+
+Most models here are BF16 and run on any GPU tier the cluster offers; the service picks a
+sensible default so you do not have to. One model is different.
+
+| Model key | Weights | Runs on | Default | Who can start it |
+|---|---|---|---|---|
+| `qwen3.8_27B` | BF16 | any bf16 GPU | 2 × A100 | anyone with GPU access |
+| `qwen2.5_72B` | BF16 | any bf16 GPU | 4 × A100 | anyone with GPU access |
+| `qwen3_4b` | BF16 | any bf16 GPU | 1 × A100 | anyone with GPU access |
+| `qwen3.5_122B` | **FP8** | **H100 or H200 only** | 2 × Hopper GPUs | **only users with H100/H200 access** |
+
+`qwen3.5_122B` ships with native FP8 weights, and FP8 arithmetic needs Hopper-generation
+tensor cores. A100 and A40 are Ampere and have none, so this model cannot run on them at
+any tensor-parallel size — it is a hardware requirement, not a tuning choice. Attempting it
+on Ampere fails during model load.
+
+On this cluster, H100 and H200 nodes belong to individual research groups. So in practice
+`qwen3.5_122B` is startable only if your group owns Hopper hardware and you submit against
+that account and partition. If you are not sure whether you have such access, you almost
+certainly do not, and `qwen3.8_27B` is the model you want — it scored higher on our own
+coding benchmark anyway (50.0% vs 45.0%).
+
+Everything else runs on A100, which is available through the `beagle3` partition and the
+open `gpu` partition. No special access is needed.
+
+`qwen3.5_122B` (Qwen3.5-122B-A10B, FP8) is registered and validated on both Hopper tiers
+at TP=2: on two H200s (58.24 GiB weights per GPU, 62.89 GiB KV) and on two H100 NVL cards
+(same weights, 20.85 GiB KV — just over a million tokens of cache). It is not yet in the
+served set because it has no measured billing rate. Being FP8 it requires Hopper; Ampere
+(A100) has no FP8 tensor cores and would fail on load, so the tier is pinned accordingly.
 
 Retired 2026-08-19 and deleted from disk: `qwen2.5_coder_32B` and `qwen3_32B`, both
 superseded by `qwen3.8_27B`; and the GLM-5.2-FP8 and DeepSeek-V4-Flash checkpoints,
@@ -129,7 +172,7 @@ parity.
 |---|---|---|
 | `qwen3_4b` | GPT-4o-mini class (light tasks) | 4B thinking model; strong on math for its size |
 | `qwen3.8_27B` *(coding default)* | 2026 open-weight frontier for its size | 50.0% vs the retired coder-32B's 26.7% on our frozen LiveCodeBench subset; vendor-reported SWE-bench Pro 61.7 and Terminal-Bench 2.1 73.0, above the much larger Qwen3.7-Plus on both. Vendor figures are self-reported and no independent code-specific evaluation exists yet. |
-| `qwen2.5_72B`, `llama3.1_70B` | GPT-4-turbo / GPT-4o-mini (general) | strong 2024 general models, a generation behind 2026 frontier |
+| `qwen2.5_72B` | GPT-4-turbo / GPT-4o-mini (general) | strong 2024 general model, a generation behind 2026 frontier |
 | `qwen3.5_122B` *(validated; cutover pending)* | ≈ Claude Sonnet 4.5 / GPT-5-mini tier | vision-language mixture-of-experts model (accepts images); scores higher than GPT-5-mini on the BFCL-V4 tool-use benchmark (72.2 vs 55.5), lower than Claude Opus |
 
 The trade is capability for locality: the closed models above score higher on most
@@ -144,7 +187,7 @@ by your fine-tune. Requirements and examples are on
 Qwen3 sessions serve with a reasoning parser, so the model's chain of thought is
 returned in a separate `reasoning_content` field and the answer stays in
 `content` — the raw `<think>…</think>` block is not mixed into the reply. Qwen2.5
-and Llama models do not think and are served without it. Clients differ in whether
+models do not think and are served without it. Clients differ in whether
 they surface `reasoning_content`: opencode displays it as a Thinking block
 (`opencode run --thinking`, or in its TUI), while aider shows only the answer. See
 [opencode](coding/opencode.md#seeing-the-models-reasoning-qwen3-only).

@@ -36,7 +36,7 @@ the measured per-model rates are in [Billing and Service Units](billing.md).
 
 Run `ai-session stop` the moment you stop working. An idle session still holds its GPUs
 and still bills. For interactive use the standard A100 configurations have the lowest
-hold cost; the faster H200 configuration only pays for itself under sustained,
+hold cost; a faster H200 configuration (not currently available on this service) would only pay for itself under sustained,
 high-throughput generation.
 
 ### Is my data private?

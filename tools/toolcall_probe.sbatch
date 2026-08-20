@@ -20,7 +20,12 @@
 # only add a variable.
 set -uo pipefail
 
-MODEL_DIR=/project/rcc/mehta5/vllm/models/Qwen3.8-27B
+MODEL_DIR="${MODEL_DIR:-/project/rcc/mehta5/vllm/models/Qwen3.8-27B}"
+# Parsers, served-name and output tag are per-model; override via --export.
+PARSERS="${PARSERS:-hermes qwen3_coder qwen3_xml}"
+TAG="${TAG:-qwen38}"
+SERVED="${SERVED_NAME:-bench-qwen38-27b-tc}"
+RPARSER="${RPARSER:-qwen3}"
 ENV=/project/rcc/mehta5/conda-envs/vllm-serve-cu129
 OUT_DIR=/project/rcc/mehta5/vllm/_scratch
 TP="${TP:-2}"
@@ -59,19 +64,19 @@ nvidia-smi --query-gpu=index,name,driver_version --format=csv,noheader
 
 probe_parser () {
   local parser="$1" port="$2"
-  local out="$OUT_DIR/toolcall_${parser}.json"
+  local out="$OUT_DIR/toolcall_${TAG}_${parser}.json"
   echo "=== PARSER ${parser} on port ${port} ==="
   vllm serve "$MODEL_DIR" \
-    --served-model-name "bench-qwen38-27b-tc" \
+    --served-model-name "$SERVED" \
     --host 127.0.0.1 --port "$port" \
     --tensor-parallel-size "$TP" \
     --trust-remote-code --enable-prefix-caching \
     --max-model-len "$MAX_MODEL_LEN" --gpu-memory-utilization 0.90 \
-    --reasoning-parser qwen3 --enforce-eager \
+    --reasoning-parser "$RPARSER" --enforce-eager \
     --enable-auto-tool-choice --tool-call-parser "$parser" &
   local pid=$!
   python /project/rcc/mehta5/vllm/tools/toolcall_probe.py \
-    "http://127.0.0.1:${port}/v1" "bench-qwen38-27b-tc" "$out" "$parser"
+    "http://127.0.0.1:${port}/v1" "$SERVED" "$out" "$parser"
   echo "PARSER ${parser}: client rc=$?"
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
@@ -79,13 +84,12 @@ probe_parser () {
   return 0
 }
 
-probe_parser hermes      8481
-probe_parser qwen3_coder 8482
-probe_parser qwen3_xml   8483
+port=8481
+for _p in $PARSERS; do probe_parser "$_p" "$port"; port=$((port+1)); done
 
 echo "=== TOOL-CALL PROBE DONE $(date '+%F %T') ==="
-for p in hermes qwen3_coder qwen3_xml; do
-  f="$OUT_DIR/toolcall_${p}.json"
+for p in $PARSERS; do
+  f="$OUT_DIR/toolcall_${TAG}_${p}.json"
   [ -s "$f" ] && python -c "
 import json
 d=json.load(open('$f'))

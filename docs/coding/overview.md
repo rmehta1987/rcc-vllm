@@ -202,18 +202,20 @@ chain of thought is returned separately from the answer — visible in opencode 
 
 | Model key | Parameters | GPUs it runs on | Prefill (tok/s) | Decode (tok/s) | Reservation floor |
 |---|---|---|---:|---:|---:|
-| `qwen3_4b` (cheapest; debugging, simple edits, tool calling) | 4B | 1 x A100-80GB | — | — | 1.0 SU/h |
-| `qwen3.8_27B` (default; thinking model, accepts images) | 27.8B | 2 x H100-80GB | — | — | see note |
-| `qwen2.5_72B` | 72B | 4 x A100-80GB | 2901 | 1123 | 4.0 SU/h |
-| `qwen2.5_72B` (H200 option) | 72B | 2 x H200 | 7594 | 2329 | 6.0 SU/h |
+| `qwen3_4b` (cheapest; debugging, simple edits, tool calling) | 4B | 1 x A100-80GB | 22167 | 5114 | 1.0 SU/h |
+| `qwen3.8_27B` (default; thinking model, accepts images) | 27.8B | 2 x A100 | — | — | 2.0 SU/h |
+| `qwen2.5_72B` | 72B | 4 x A100-80GB | 2914 | 1191 | 4.0 SU/h |
 
-!!! warning "`qwen3.8_27B` has no measured billing rate yet"
-    The coding default became `qwen3.8_27B` on 2026-08-19 and does not yet have a
-    `rate_table.json` record. Until one is measured, its sessions bill the **reservation
-    floor** for the GPUs held — you are charged for GPU time, with no token-metered
-    component. Budget on wall-clock, not on tokens. Note also that this model thinks by
-    default at `reasoning_effort: xhigh`, which can generate a large number of reasoning
-    tokens and therefore hold the GPU longer; pass `low` or `medium` for routine edits.
+
+!!! note "`qwen3.8_27B`: floor billing, and a word about thinking"
+    The coding default has a measured rate for the H100 tier but not yet for A100, which
+    is where it runs by default. Until an A100 record is measured, its sessions bill the
+    **reservation floor** for the GPUs held — 2.0 SU/hour — with no token-metered
+    component. Budget on wall-clock, not on tokens.
+
+    Separately: this model thinks by default at `reasoning_effort: xhigh`, which can
+    generate a large number of reasoning tokens and hold the GPU longer than you expect.
+    Pass `low` or `medium` for routine edits; keep `xhigh` for genuinely hard problems.
 
 Throughput figures are aggregate, measured by the billing benchmark at concurrency
 64 over prefill-heavy, decode-heavy, and balanced request mixes.
@@ -223,12 +225,12 @@ GPU-type weight times the number of GPUs times the hours held; a session bills t
 larger of the metered token work and this floor. The canonical rate table and the
 full formula are on [Billing and Service Units](../billing.md).
 
-The coder model is the default because it is specialized for code, uses half the
-GPUs of the 72B, and has a lower measured per-token cost than the 72B at every
-benchmarked configuration. The 72B is preferable for mixed code-and-prose work or
-when the larger general model is specifically wanted. The H200 configuration
-(faster, higher floor) and other advanced serving overrides are handled by
-RCC staff; ask them, or see the staff guide in the repository.
+The coding model is the default because it measured far ahead of the alternatives on
+code generation and uses half the GPUs of the 72B. The 72B is preferable for mixed
+code-and-prose work or when the larger general model is specifically wanted; it is also
+the model behind the web interface. Advanced serving overrides are handled by RCC staff;
+ask them, or see the staff guide in the repository. H200 configurations are not currently
+available on this service.
 
 !!! warning "Each of these starts a billed GPU reservation"
     The floors above apply from the moment the session starts. Stop with

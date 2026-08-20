@@ -22,7 +22,7 @@
 #   * A100(80GB) TP=2  (default here) -- code-tuned, HALF the GPUs of the 72B, cheaper.
 #   * Override to the general 72B for non-coding/mixed work, or H200 for throughput:
 #         MODEL=qwen2.5_72B   TP=4 CONSTRAINT=A100 bash .../run_coding_agent.sh up
-#         MODEL=qwen2.5_coder_32B TP=2 CONSTRAINT=H200 bash .../run_coding_agent.sh up
+#         MODEL=qwen3.8_27B TP=2 CONSTRAINT=H100 bash .../run_coding_agent.sh up
 # Coding sessions serve at a WIDE 32K context (MAX_MODEL_LEN, vs the 8192 chat default)
 # so aider can actually read repo files -- Qwen2.5 supports 32K natively (no YaRN).
 # Still NO --agent-client: aider uses text-edit diffs, not native tool-calls (vLLM
@@ -60,7 +60,7 @@ USAGE_DIR="$AISESSION_STATE_DIR/logs/usage"      # `end` drops <user>_<jobid>_<t
 KEYFILE="$AISESSION_STATE_DIR/logs/gateway/session_key"  # per-session gateway access key (mode 600)
 
 # Coding wants the code-specialized model. Override via env.
-MODEL=${MODEL:-qwen2.5_coder_32B}
+MODEL=${MODEL:-qwen3.8_27B}
 TP=${TP:-2}
 CONSTRAINT=${CONSTRAINT:-A100}         # uppercase A100 = 80GB nodes (32B@TP2 fits; 40GB 'a100' won't)
 MAX_MODEL_LEN=${MAX_MODEL_LEN:-32768}  # WIDE context for coding (chat default is 8192); Qwen2.5 native 32K

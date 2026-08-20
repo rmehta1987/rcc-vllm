@@ -40,6 +40,11 @@
 
 set -euo pipefail
 
+# HARDWARE RESTRICTION (CLAUDE.md): no H200 without explicit user permission.
+case "${SLURM_JOB_NODELIST:-}" in
+  *midway3-060*) echo "FENCE VIOLATION: H200 node ${SLURM_JOB_NODELIST} -- aborting"; exit 3 ;;
+esac
+
 REPO=/project/rcc/mehta5/vllm
 ENV_PATH=/project/rcc/mehta5/conda-envs/vllm-probe
 HF_CACHE=/project/rcc/mehta5/hf_cache
@@ -65,9 +70,48 @@ export HF_HOME=${HF_CACHE}
 export HUGGINGFACE_HUB_CACHE=${HF_CACHE}
 export TORCHINDUCTOR_CACHE_DIR=${INDUCTOR_CACHE}
 
-module load python/miniforge-25.3.0
-eval "$(mamba shell hook --shell bash)"
-mamba activate "${ENV_PATH}"
+# Serving env follows the MODEL, mirroring ai-session/launch_ai_session.sh. The default
+# vllm-probe env is vLLM 0.10.2 and cannot load Qwen3_5* architectures; those models serve
+# (and must therefore be RATE-MEASURED) on vllm-serve-cu129 (vLLM 0.26.0). A rate row is
+# only valid for the env and flags it was measured under, so this MUST match the launcher.
+# FORCE_CU129=1 measures a model that normally serves on 0.10.2 against the 0.26.0 env
+# instead. Used for the single-env consolidation: every served model needs a rate row
+# measured on the env it will actually run under, and metering.py invalidates any row
+# whose recorded vllm_version differs from the running engine.
+CU129_ENV=${FORCE_CU129:-0}
+case "${MODEL_KEY}" in
+  qwen3.5*|qwen3.6*|qwen3.8*) CU129_ENV=1
+    ENV_PATH=/project/rcc/mehta5/conda-envs/vllm-serve-cu129
+    export HF_HOME=/project/rcc/mehta5/hf-cache
+    echo "[bench] ${MODEL_KEY} requires vLLM 0.26.0; ENV_PATH=${ENV_PATH}" >&2 ;;
+esac
+
+if [ "$CU129_ENV" = "1" ]; then
+  ENV_PATH=/project/rcc/mehta5/conda-envs/vllm-serve-cu129
+  export HF_HOME=/project/rcc/mehta5/hf-cache
+  # The three env fixes the cu129 env REQUIRES on a GPU compute node (see
+  # tools/serve_cu129.sbatch): real CUDA toolkit + host compiler for FlashInfer's JIT,
+  # the env's newer libstdc++ ahead of el8's, and DeepGEMM off (its JIT FP8 GEMM needs a
+  # driver-API symbol driver 535 lacks). Without these the engine dies on load.
+  module load python/miniforge-25.3.0 cuda/12.8 gcc/12.2.0
+  eval "$(mamba shell hook --shell bash)"
+  mamba activate "${ENV_PATH}"
+  : "${CUDA_HOME:=$(dirname "$(dirname "$(command -v nvcc)")")}"
+  export CUDA_HOME
+  export LD_LIBRARY_PATH="${ENV_PATH}/lib:${LD_LIBRARY_PATH:-}"
+  export VLLM_USE_DEEP_GEMM=0 VLLM_MOE_USE_DEEP_GEMM=0
+  # Keep multi-GB compile/JIT caches OFF the quota-limited home fileset.
+  export VLLM_CACHE_ROOT=/project/rcc/mehta5/.serve-cache/vllm
+  export XDG_CACHE_HOME="$TMPDIR/xdg" TRITON_CACHE_DIR="$TMPDIR/triton"
+  export TORCH_EXTENSIONS_DIR="$TMPDIR/torch_ext" TORCH_HOME="$TMPDIR/torch_home"
+  export FLASHINFER_WORKSPACE_BASE="$TMPDIR/flashinfer"
+  mkdir -p "$VLLM_CACHE_ROOT" "$XDG_CACHE_HOME" "$TRITON_CACHE_DIR" \
+           "$TORCH_EXTENSIONS_DIR" "$TORCH_HOME" "$FLASHINFER_WORKSPACE_BASE"
+else
+  module load python/miniforge-25.3.0
+  eval "$(mamba shell hook --shell bash)"
+  mamba activate "${ENV_PATH}"
+fi
 
 echo "=== bench_billing: ${MODEL_KEY} TP=${TP} on $(hostname) ==="
 nvidia-smi --query-gpu=name --format=csv,noheader || true

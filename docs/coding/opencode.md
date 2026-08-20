@@ -222,7 +222,7 @@ opencode run --thinking --model rcc/qwen3_4b "…"   # prints a "Thinking: …" 
 
 The interactive TUI shows the thinking block inline above each reply. Only the
 Qwen3-family models reason this way (`qwen3_4b` and the coding default `qwen3.8_27B`, both served);
-the default `qwen3.8_27B` and the Qwen2.5/Llama models do not think, so
+the Qwen2.5 models do not think, so
 `--thinking` has no effect with them. aider, by contrast, does not surface
 `reasoning_content` against this endpoint — it shows only the answer.
 

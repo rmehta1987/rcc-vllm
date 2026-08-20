@@ -115,22 +115,29 @@ The rate table holds one record per model-and-GPU configuration. Five records ar
 populated (`billing/rate_table.json`, last updated 2026-06-10). The floor column
 is `w_gpu * N`, the SU cost per hour of holding that configuration.
 
-| Model key           | GPU type | GPUs (N) | Prefill (tok/s) | Decode (tok/s) | Floor (SU/h) |
-|---------------------|----------|---------:|----------------:|---------------:|-------------:|
-| `qwen2.5_72B`       | a100     |        4 |         2901.16 |        1122.71 |          4.0 |
-| `qwen2.5_72B`       | h100     |        4 |         3787.33 |        1810.50 |          8.0 |
-| `qwen2.5_72B`       | h200     |        2 |         7593.69 |        2328.72 |          6.0 |
-| `qwen2.5_coder_32B` *(retired 2026-08-19)* | a100 |     2 |         4772.81 |        1679.03 |          2.0 |
-| `qwen3_4b`          | a100     |        1 |        20063.28 |        4128.74 |          1.0 |
+| Model key           | GPU type | GPUs (N) | Prefill (tok/s) | Decode (tok/s) | Floor (SU/h) | Server |
+|---------------------|----------|---------:|----------------:|---------------:|-------------:|--------|
+| `qwen2.5_72B`       | a100     |        4 |         2913.57 |        1191.43 |          4.0 | 0.26.0 |
+| `qwen3_4b`          | a100     |        1 |        22166.80 |        5113.82 |          1.0 | 0.26.0 |
+| `qwen3.8_27B`       | h100     |        2 |         8969.31 |         894.71 |          4.0 | 0.26.0 |
+| `qwen2.5_72B`       | h100     |        4 |         3787.33 |        1810.50 |          8.0 | 0.10.2 |
+| `qwen2.5_coder_32B` *(retired)* | a100 |     2 |         4772.81 |        1679.03 |          2.0 | 0.10.2 |
 
-Provenance: all five records were benchmarked with the model server (vLLM 0.10.2) at dtype bfloat16, at
-concurrency 64 over three request profiles (prefill-heavy, decode-heavy, balanced),
-using the same serve flags production uses. Nodes and dates: the two a100 80 GB
-records on midway3-0377 (Qwen2.5-72B on 2026-06-02, Qwen2.5-Coder-32B on
-2026-06-10), h100 (H100 NVL) on midway3-0426 on 2026-06-02, h200 on midway3-0605 on
-2026-06-02, and the qwen3_4b anchor on an A100-PCIE-40GB on midway3-0294 on
-2026-06-02. Each record in the rate table carries the full provenance block (GPU
-name, node, serve flags, profile parameters, a metrics cross-check, timestamp).
+Provenance. A record is only valid for the model-server version and serve flags it was
+measured under; if the running server differs, the token term is dropped and the session
+bills the floor instead of using a stale number. The three 0.26.0 records were measured on
+2026-08-19: the two a100 records on midway3-0377/0378 (A100 80 GB) and the qwen3.8_27B
+record on midway3-0423 (H100 NVL). The remaining 0.10.2 records date from June 2026 and no
+longer apply to a running session; they are kept for reference. An h200 record was removed
+on 2026-08-19 because that tier is not available to this service.
+
+Two current gaps. `qwen3.8_27B` runs on **A100** by default but its record is for h100, so
+coding sessions bill the floor until an a100 record is measured. `qwen3.8_27B` is also
+measured with CUDA graphs disabled, which is why its decode figure is lower than its size
+would suggest; that is a serve-config workaround, not a property of the model.
+
+Each record in the rate table carries a full provenance block (GPU name, node, serve
+flags, profile parameters, a metrics cross-check, timestamp).
 
 These are aggregate throughputs at concurrency 64, the basis for the token charge —
 not the single-stream speed one interactive user perceives. Session start commands
@@ -156,7 +163,7 @@ rates in the table above.
 
 | Configuration           | w_gpu x N | Token term (one request) | 2 h floor | Billed  |
 |-------------------------|----------:|-------------------------:|----------:|--------:|
-| Qwen2.5-72B, 2 x H200   |       6.0 |                0.0008 SU |   12.0 SU | 12.0 SU |
+| Qwen2.5-72B, 2 x H200 *(illustrative; H200 not available)* | 6.0 |     0.0008 SU |   12.0 SU | 12.0 SU |
 | Qwen2.5-72B, 4 x A100   |       4.0 |                0.0013 SU |    8.0 SU |  8.0 SU |
 
 The floor is the charge; the token term is a rounding error, about one
@@ -168,11 +175,11 @@ The everyday number: a coding session on two GPUs costs **2.0 SU per hour held**
 A100s. A three-hour afternoon of coding is 6.0 SU regardless of how many requests you
 send, unless your request volume is high enough for the token term to exceed the floor.
 
-Since 2026-08-19 the coding default is `qwen3.8_27B`, which runs on two H100s and has
-**no measured rate record yet** — its sessions bill the reservation floor for the GPUs
-held, with no token-metered component at all. The 2.0 SU/h figure above was measured for
-the retired `qwen2.5_coder_32B` on two A100s and is kept as the closest reference point
-until a `bench_billing.py` run fills in a record for the current model.
+Since 2026-08-19 the coding default is `qwen3.8_27B` on two A100s, so the 2.0 SU/h floor
+above still applies to a coding session. Its measured rate record is for the H100 tier, not
+A100, so an A100 coding session currently bills the **reservation floor only** — GPU time
+held, with no token-metered component. An `a100` record is outstanding. In practice the
+floor dominates interactive coding anyway, so the effect on a typical session is small.
 
 ## Edge cases
 

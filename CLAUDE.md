@@ -25,6 +25,44 @@ Use instead, in order of preference:
 Add `--exclude=midway3-[0600-0606]` to GPU submissions as a belt-and-braces guard
 even on partitions that contain no H200.
 
+### Do not reach PI-owned nodes through a broad partition
+
+The H200 rule above is the specific case of a general one. A staff-accessible partition
+spans most of the cluster, so submitting there with a `--constraint` can silently land on
+hardware another research group owns, bypassing their partition and account entirely. It
+looks like "a general node of type X"; it is not.
+
+**Before submitting any GPU job, check who owns the nodes you could land on:**
+
+```bash
+scontrol show node <node> | grep -oP 'Partitions=\K[^ ]+'
+```
+
+A node listed in only a broad partition is shared. A node ALSO listed in a `<pi>-gpu`
+partition belongs to that group — do not target it without either an account you hold for
+it, or explicit user permission. Constrain the nodelist (`--nodelist`, `--exclude`) or
+submit to a partition whose hardware is genuinely shared.
+
+Known ownership on this cluster, as of 2026-08-19:
+
+| nodes | GPU | owner |
+|---|---|---|
+| midway3-0600..0606 | H200 | pi-jevans, pi-lgagliardi, pi-gagalli — **off limits, see above** |
+| midway3-0377, 0378 | A100 80GB | pi-gagalli |
+| midway3-0558, 0559 | A100 80GB | schmidt / pi-dfreedman, ai4s-hackathon |
+| midway3-0423 | H100 | pi-pedramh — **an account the user holds; OK to use** |
+| midway3-0294 | A100 40GB | nobody — in the open `gpu` partition |
+| beagle3-0001..0044 | A100 40GB / A40 | nobody — consortium hardware |
+
+Genuinely unowned GPU capacity is: the `gpu` partition (open to all, but 10 of its 11
+nodes are V100/RTX6000, which are fp16-only and excluded from this service) and the
+`beagle3` partition. Prefer those, plus `pedramh-gpu`, and expect to queue.
+
+Do not use an elevated QOS to jump that queue on shared hardware. `beagle3` defaults an
+`rcc-staff` job to `beagle3-prio` (priority 100,000,000 vs the normal 0); pass
+`--qos=beagle3` explicitly, or fix a submitted job with
+`scontrol update jobid=<id> QOS=beagle3`.
+
 ## Slurm job fences (these prevent real billing harm)
 
 Any benchmark or smoke job MUST follow both conventions, or it will be charged to

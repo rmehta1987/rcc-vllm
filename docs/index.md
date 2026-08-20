@@ -84,7 +84,7 @@ the preset's default.
 
 | Preset | Model key | Weights | Use | Context (tokens) | GPUs it runs on | License |
 |---|---|---|---|---:|---|---|
-| `code` | `qwen3.8_27B` | Qwen3.8-27B | Coding | 32768 | 2 x H100-80GB | Apache-2.0 |
+| `code` | `qwen3.8_27B` | Qwen3.8-27B | Coding | 32768 | 2 x A100 | Apache-2.0 |
 | `chat` | `qwen2.5_72B` | Qwen2.5-72B-Instruct | General chat | 8192 | 4 x A100-80GB | Qwen (Tongyi) community license |
 | `fast` | `qwen3_4b` | Qwen3-4B | Small and fast; lowest cost | 8192 | 1 x A100 | Apache-2.0 |
 
@@ -98,25 +98,23 @@ configuration.
 The coding model is itself a thinking model: its chain of thought is returned
 separately from the answer, and reasoning depth is adjustable per request via
 `reasoning_effort` (`low`, `medium`, or `xhigh` — `xhigh` is the model's default).
-It also accepts images. A Meta-Llama-3.1-70B-Instruct checkpoint (Llama 3.1 Community
-License plus an Acceptable Use Policy) is also available to any user with
-`--model llama3.1_70B`, once you record a one-time license acknowledgment (the
-Llama 3.1 Community License permits this use, with conditions; see
-[Model licenses](licenses.md)). A Qwen2.5-0.5B-Instruct
+It also accepts images. A Qwen2.5-0.5B-Instruct
 checkpoint (Apache-2.0) is staged for smoke tests only and is not offered for user
 sessions.
 
-One larger model is staged but not yet offered. Qwen3.5-122B-A10B (FP8) is
-registered and validated — it serves at TP=2 on two H200s — but is not in the served
-set until it has a measured billing rate. The H200 hardware itself is already on the
-cluster; what is pending is the rate measurement, not the machines.
+One larger model is staged but not yet offered. Qwen3.5-122B-A10B is validated at two
+GPUs on both Hopper tiers and joins the served list once it has a measured billing rate.
+Note that its weights are FP8, which requires an H100 or H200 — it cannot run on A100 or
+A40 at all. Since Hopper nodes here belong to individual research groups, this model will
+only ever be startable by users whose group owns that hardware. Everything else the
+service offers runs on A100, which needs no special access.
 
 Guidance on choosing between the served models is on the
 [coding overview](coding/overview.md) page, and a rough capability frame of
 reference against closed "frontier" models is in the
 [Command Reference](reference.md#rough-capability-frame-of-reference). The license obligations that apply when
 you serve these models to other people — attribution for the Qwen 72B model, the
-acknowledgment gate for Llama — are set out on the [model licenses](licenses.md) page.
+— are set out on the [model licenses](licenses.md) page.
 
 !!! note "GPU nodes have no internet access"
     Only pre-staged models can be served; a session cannot download weights. New

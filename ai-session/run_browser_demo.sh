@@ -79,8 +79,8 @@ export GW_PORT MCPO_PORT
 if [ -z "${READY_TIMEOUT:-}" ]; then
   case "$MODEL" in
     qwen3.5_122B)                 READY_TIMEOUT=2400 ;;  # 122B MoE on H200
-    qwen2.5_72B|llama3.1_70B)     READY_TIMEOUT=1500 ;;  # 70-72B dense, ~15min cold start
-    qwen2.5_coder_32B|qwen3_32B)  READY_TIMEOUT=1200 ;;  # 32B
+    qwen2.5_72B)                  READY_TIMEOUT=1500 ;;  # 72B dense, ~15min cold start
+    qwen3.8_27B)                  READY_TIMEOUT=1800 ;;  # 27B hybrid GDN: Triton JIT warmup is slow
     *)                            READY_TIMEOUT=900  ;;   # small (4b/0.5B)
   esac
 fi

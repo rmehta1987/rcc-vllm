@@ -2,6 +2,92 @@
 
 ## Unreleased — model-refresh (branch milestone/model-refresh)
 
+### Fleet consolidation, hardware coverage, and a new measured leader (2026-08-19, later)
+
+Follow-on to the coding cutover earlier the same day. Everything below is MEASURED.
+
+**Gemma-4-31B-it: Gate-2 PASS at 66.67% (40/60), +40.00 pts over the frozen baseline and
++16.67 over the Qwen3.8-27B incumbent adopted hours earlier.** Same frozen LCB-60 subset,
+SHA and content fingerprint, same greedy `enable_thinking:false` decode, same harness and
+serve env. By difficulty hard 14/30 (vs the 27B's 6/30), medium 14/18, easy 12/12 — the only
+model to sweep easy. Generation 53546905 plus tail resume 53554776 (`resume_kept=56`), score
+53554777. At ~2.8 sigma this is outside the n=60 noise band, unlike the 27B-vs-122B gap.
+Staged from `google/gemma-4-31B-it` (Apache-2.0, UNGATED), 58.25 GiB BF16, Gate-D byte-exact.
+Serves TP=2 on H100 (51.89 GiB KV) and A100 80GB (40.49 GiB KV, 226,696 tokens, 13.8x
+concurrency). Tool calling works with vLLM's `gemma4` parser; `functiongemma` returns nothing.
+Caveat: the frozen decode is Gemma's NATIVE default but suppresses Qwen3.8's `xhigh`, so the
+27B's 50.00% is a lower bound and a thinking-on rerun is owed before this is called final.
+
+**Qwen3.8-27B now verified on every GPU tier users can reach.** H100 NVL, A100 80GB (SXM4 and
+PCIe), A100 40GB (beagle3), and A40 — all PASS at TP=2. `constraint_for_model` moved from an
+H100 pin to `"A100|a100"`: H100 exists ONLY in PI-owned partitions, so the H100 pin made the
+default coding model unstartable for most users. A100 is reachable via beagle3 (22 nodes) and
+the open `gpu` partition, and halves the floor (tier weight 1.0 vs 2.0). A40 also passes, at
+0.5. NOTE: the rate row is still h100-only, so an A100 session bills the floor until an a100
+row is measured — still half the H100 floor, so a net saving either way.
+
+**Single-env consolidation measured.** All three served models now have vLLM 0.26.0 rate rows,
+and 0.26.0 is faster on both re-measured models: qwen3_4b a100 20063/4129 -> 22167/5114
+(+10.5% prefill, +23.9% decode); qwen2.5_72B a100 2901/1123 -> 2914/1191. Two needed a pinned
+flag to get there, both now mirrored into the launcher so production matches the measured row:
+  - `qwen3.8_27B` (and the whole qwen3.5 family) forced to `--enforce-eager`. With CUDA graphs
+    on, vLLM auto-selects the FlashInfer `mnnvl` allreduce and `trtllm_mnnvl_allreduce_fusion`
+    dies with an illegal memory access inside `profile_cudagraph_memory` (job 53537347). The
+    engine never becomes ready, so a user would hold GPUs through the readiness timeout and be
+    floor-billed for a server that never served. Costs decode (894.71 tok/s, alpha 10.02 —
+    out of family); `pass_config.fuse_allreduce_rms=false` is the untested recovery path.
+  - `qwen2.5_72B` pinned to `--gpu-memory-utilization 0.86`. At 0.90 it OOMs during cudagraph
+    capture on 0.26.0 by 76 MiB (job 53539312) where 0.10.2 was fine; 0.86 clears it with ~3 GiB
+    of margin and measured slightly FASTER than the old row.
+
+**Models deleted (total 1.48 TB reclaimed today, 1.79 TB -> 315 GB).** This entry adds
+Qwen3.6-35B-A3B (67G, unregistered and superseded), Meta-Llama-3.1-70B (263G: 132G of
+unreferenced `original/*.pth` duplicates plus the 132G model). Llama had ZERO recorded sessions
+in the central ledger, no rate row, and was the only licence-gated model here; note it is also
+the only deletion that is NOT a free re-download, since Meta gates the weights. Its removal
+touched the launcher tool-parser arm, the browser-demo timeout arm, the whole Llama 3.1 licence
+section in the docs, and four model tables. `_LICENSE_GATED` is retained, unused, for the next
+restrictively-licensed model.
+
+**H200 removed as a serving tier.** The h200 rate row is dropped and no model may pin that
+tier. `qwen3.5_122B` is re-pinned to `"H100|H200"` — it is native FP8 (E4M3, block-wise
+128x128, 96.8% of weights) and FP8 needs Hopper tensor cores, so it must never fall through to
+the preset's A100 default and floor-bill on a doomed load. It is validated at TP=2 on BOTH
+Hopper tiers (H200 job 53069683; H100 NVL job 53538328, 20.85 GiB KV = 1,016,978 tokens) but
+stays unserved pending a rate row. Docs now state plainly that only groups owning Hopper
+hardware can ever start it, and that `qwen3.8_27B` is the better choice anyway.
+
+**Production breakage found and fixed.** `bin/ai-session::do_code` still exported
+`MODEL=qwen2.5_coder_32B` after that model was deleted — `ai-session code` would have failed
+outright. Four further stale references in the same sweep: the usage text, `run_coding_agent.sh`,
+`run_browser_demo.sh`'s READY_TIMEOUT arm, and a `server.py` comment.
+
+**Harness hardening, each from a failure that cost a reservation.**
+  - Persistent Triton cache at `/project/rcc/mehta5/.serve-cache/triton` (was per-job `$TMPDIR`,
+    so every job recompiled from scratch). A cold sm80 cache blew vLLM's 600s engine-ready
+    timeout and killed the first Qwen A100 smoke (53539504); `VLLM_ENGINE_READY_TIMEOUT_S`
+    raised to 2400 alongside. The retry then passed in 7m54s.
+  - `$TMPDIR` namespaced to `/tmp/$USER-vllmjob/$SLURM_JOB_ID`. The node epilog sweeps
+    `/tmp/$USER*`, so a concurrent job of ours finishing on the same node deleted a running
+    benchmark's tmpdir; FlashAttention died mid-run (`flash_attn.py:1014`) after 27 of 60
+    problems, leaving 33 HTTP 500s that would have scored as wrong answers.
+  - GPU-visibility guard: abort before loading weights if `nvidia-smi` device count != TP.
+    Slurm reported `gres/gpu=2` while the cgroup exposed 1 on beagle3-0029 (job 53539505).
+  - `bench_billing.sbatch` routes the env by model key, with `FORCE_CU129=1` to measure a
+    0.10.2-era model against 0.26.0; `toolcall_probe.sbatch` parameterised by model/parsers.
+  - `serve_cu129.sbatch` gained a `gemma4` reasoning-parser arm.
+
+**CLAUDE.md: node-ownership rule.** The H200 restriction generalised — a staff-accessible
+partition spans most of the cluster, so a bare `--constraint` can silently land on another
+group's hardware. Adds the `scontrol show node | grep Partitions=` pre-submit check, a table of
+known per-node ownership, and a note not to use an elevated QOS (`beagle3-prio`, priority
+100,000,000) to jump the queue on shared hardware.
+
+**RTX 6000 nodes settled:** `Quadro RTX 6000, 24576 MiB, compute capability 7.5` (job 53544135)
+— Turing, not the RTX PRO 6000 Blackwell. fp16-only, no bf16, no FlashAttention 2/3, 24 GB.
+Unusable for every model here, confirming the existing `excluded_tiers` entry. The open `gpu`
+partition therefore offers exactly ONE usable node (midway3-0294, A100 40GB) to this service.
+
 ### Coding incumbent cutover — Qwen3.8-27B replaces Qwen2.5-Coder-32B (2026-08-19)
 
 Measured on the frozen 60-problem LiveCodeBench subset (`subset_sha256=b3c2b753…7021b`,

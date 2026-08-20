@@ -118,6 +118,49 @@ fi
 # and injects it when forwarding, so legitimate clients never handle it directly.
 BACKEND_KEY=$(openssl rand -hex 16)
 
+# Per-model CUDA-graph safety. MEASURED 2026-08-19 (bench_billing job 53537347, 2xH100
+# NVL TP=2): with CUDA graphs ON, vLLM auto-selects the FlashInfer "mnnvl" all-reduce
+# backend (flashinfer_all_reduce.py:121) and its fused allreduce+RMSNorm kernel dies with
+# an illegal memory access inside profile_cudagraph_memory ->
+# "trtllm_mnnvl_allreduce_fusion failed ... an illegal memory access was encountered".
+# The engine never becomes ready, so the user holds GPUs for the readiness timeout and is
+# floor-billed for a server that never served. mnnvl is a MULTI-node NVLink path being
+# picked on a single node; the same log also warns that symmetric-memory multicast is
+# unsupported here. --enforce-eager avoids cudagraph profiling entirely and is the config
+# every successful run of this model used (53440093, 53496745, 53533204, 53534097).
+# Revisit with compilation pass_config.fuse_allreduce_rms=false to try to recover CUDA
+# graphs; re-measure the rate_table row if that lands, since the rate is flag-bound.
+# Applied to the whole Qwen3.5 FAMILY, not just the model that crashed: the failure is in
+# backend selection for a fused allreduce on this hardware/topology, not in anything
+# model-specific, and 3.5/3.6/3.8 share the architecture. qwen3.5_122B has never been run
+# with CUDA graphs at all -- its Gate-1 smokes (53069683 H200, 53538328 H100) both used
+# eager -- so it is pinned pre-emptively rather than after a user hits the same crash.
+# CONSEQUENCE: any rate_table row for these keys must also be measured with --enforce-eager,
+# because metering.py invalidates a record whose serve flags differ from the running engine.
+case "${MODEL_KEY}" in
+  qwen3.5*|qwen3.6*|qwen3.8*)
+    if [ "${ENFORCE_EAGER}" = "0" ]; then
+      ENFORCE_EAGER=1
+      echo "[launch] ${MODEL_KEY}: forcing --enforce-eager (CUDA-graph mnnvl allreduce crash, job 53537347)" >&2
+    fi ;;
+esac
+
+# Per-model GPU memory utilization. MEASURED 2026-08-19: at the 0.90 default, qwen2.5_72B
+# TP=4 on A100-80GB OOMs during CUDA-graph capture under vLLM 0.26.0 -- by 76 MiB (job
+# 53539312: "Tried to allocate 76.00 MiB ... 100.88 MiB allocated in private pools (e.g.
+# CUDA Graphs)"). The identical config works on 0.10.2; 0.26.0's footprint is marginally
+# larger and tips a config that was already near the edge. 0.86 clears it with ~3 GiB of
+# margin and cost nothing measurable (job 53539734: prefill 2913.57, decode 1191.43 --
+# both slightly BETTER than the 0.10.2 record). Chosen over --enforce-eager so the 72B
+# keeps CUDA graphs. This value MUST match the rate_table row's measured config.
+case "${MODEL_KEY}" in
+  qwen2.5_72B)
+    if [ "${GPU_MEM_UTIL}" = "0.90" ]; then
+      GPU_MEM_UTIL=0.86
+      echo "[launch] ${MODEL_KEY}: gpu-memory-utilization 0.90 -> 0.86 (0.26.0 cudagraph OOM, job 53539312)" >&2
+    fi ;;
+esac
+
 EAGER_FLAG=""
 if [ "${ENFORCE_EAGER}" = "1" ]; then EAGER_FLAG="--enforce-eager"; fi
 
@@ -153,7 +196,6 @@ if [ "${AGENT_CLIENT}" = "1" ]; then
     # hermes IS correct for it -- do not fold it into the arm above.
     qwen3*)  TOOL_PARSER="hermes" ;;
     qwen*)   TOOL_PARSER="hermes" ;;   # Qwen2.5 uses the hermes parser
-    llama*)  TOOL_PARSER="llama3_json" ;;
     *)       TOOL_PARSER="hermes" ;;
   esac
   AGENT_FLAGS="--enable-auto-tool-choice --tool-call-parser ${TOOL_PARSER}"

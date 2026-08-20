@@ -70,7 +70,14 @@ export VLLM_MOE_USE_DEEP_GEMM=0
 
 # Per-job TMPDIR hygiene (a stale TMPDIR kills the engine on load).
 unset TMPDIR SLURM_TMPDIR
-export TMPDIR="/tmp/${USER}_${SLURM_JOB_ID}"
+# TMPDIR must not collide with, or be swept by, another of OUR jobs on the same node.
+# Observed job 53544726: a concurrent job of ours finished on midway3-0423 and the node
+# epilog removed /tmp/mehta5_*, deleting this job's TMPDIR while it was still running.
+# FlashAttention then died mid-benchmark with
+#   FileNotFoundError: '/tmp/mehta5_53544726/tmpjnosc95w'  (flash_attn.py:1014)
+# after 27 of 60 problems, leaving 33 HTTP 500s that would have scored as wrong answers.
+# Namespacing by job id alone was not enough -- the sweep matches the USER prefix.
+export TMPDIR="/tmp/${USER}-vllmjob/${SLURM_JOB_ID}"
 mkdir -p "$TMPDIR"
 export HF_HOME=/project/rcc/mehta5/hf-cache
 
@@ -80,7 +87,18 @@ export HF_HOME=/project/rcc/mehta5/hf-cache
 # caches -> node-local $TMPDIR (quota-free). HF_HOME is already off home (above).
 export VLLM_CACHE_ROOT=/project/rcc/mehta5/.serve-cache/vllm
 export XDG_CACHE_HOME="$TMPDIR/xdg"
-export TRITON_CACHE_DIR="$TMPDIR/triton"
+# Triton JIT cache must PERSIST across jobs. It used to live in $TMPDIR (node-local,
+# destroyed at job end), so every job recompiled every kernel from scratch. On sm90 that
+# fit inside vLLM's 600s engine-ready timeout; on sm80 (A100) the Gated DeltaNet kernels
+# did NOT -- job 53539504 died with "Timed out waiting for engine core processes to start
+# ... Waited 600s" while still in qwen_triton_warmup, having just thrown a FileNotFoundError
+# inside the per-job Triton cache dir. /project is not quota-limited like home, and the
+# vLLM compile cache already lives here.
+export TRITON_CACHE_DIR=/project/rcc/mehta5/.serve-cache/triton
+# vLLM's engine-ready timeout defaults to 600s, which is not enough for a COLD Triton
+# cache on a compute capability we have no prebuilt kernels for (job 53539504, A100/sm80).
+# Raise it; with the persistent cache above, only the first run per (arch, GPU) pays this.
+export VLLM_ENGINE_READY_TIMEOUT_S="${VLLM_ENGINE_READY_TIMEOUT_S:-2400}"
 export TORCHINDUCTOR_CACHE_DIR="$TMPDIR/inductor"
 export TORCH_EXTENSIONS_DIR="$TMPDIR/torch_ext"
 export TORCH_HOME="$TMPDIR/torch_home"
@@ -98,6 +116,12 @@ mkdir -p "$VLLM_CACHE_ROOT" "$XDG_CACHE_HOME" "$TRITON_CACHE_DIR" "$TORCHINDUCTO
 REASONING_FLAG=""
 case "$(basename "$MODEL_DIR")" in
   Qwen3*|qwen3*) REASONING_FLAG="--reasoning-parser qwen3" ;;
+  # Gemma 4 ships its own reasoning parser in vLLM 0.26.0 (reasoning/__init__.py:51,
+  # "gemma4" -> Gemma4ParserReasoningAdapter). Unlike the Qwen3.5 family its chat template
+  # defaults enable_thinking to FALSE, but thinking still activates when tools are supplied
+  # or a system message is present, so the parser is needed to keep the CoT out of
+  # `content` -- the same reason the qwen3 arm exists.
+  Gemma-4*|gemma-4*|Gemma4*) REASONING_FLAG="--reasoning-parser gemma4" ;;
 esac
 # DeepSeek-V4's fp8_ds_mla attention layout REQUIRES an fp8 kv-cache; with the default (auto) it
 # aborts engine init: "DeepseekV4 fp8_ds_mla layout only supports fp8 kv-cache, got auto" (job
@@ -111,6 +135,18 @@ EAGER_FLAG=""; [ "$EAGER" = "1" ] && EAGER_FLAG="--enforce-eager"
 
 echo "=== $(date '+%F %T') node $(hostname) serving $SERVED_NAME (TP=$TP eager=$EAGER) ==="
 nvidia-smi --query-gpu=index,name,driver_version,memory.total --format=csv,noheader
+
+# Fail fast if the GPUs actually VISIBLE to us differ from TP. Slurm's AllocTRES can say
+# gres/gpu=N while the cgroup exposes fewer (observed job 53539505 on beagle3-0029: alloc
+# said 2, nvidia-smi saw 1), and vLLM then dies with "World size (N) is larger than the
+# number of available GPUs" AFTER the reservation is already spent. Checking here costs
+# nothing and turns a wasted allocation into an immediate, legible failure.
+_VIS=$(nvidia-smi --query-gpu=index --format=csv,noheader | wc -l)
+if [ "$_VIS" -ne "$TP" ]; then
+  echo "GPU VISIBILITY MISMATCH: TP=$TP but only $_VIS GPU(s) visible on $(hostname)."
+  echo "  Slurm AllocTRES may disagree with the cgroup; resubmit rather than proceed."
+  exit 4
+fi
 
 # Build the serve argv ONCE so the default (pure-serve) path and the SMOKE
 # (co-located accept-check) path below cannot drift. Unquoted ${REASONING_FLAG}/

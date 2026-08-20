@@ -19,6 +19,8 @@ or thinking mode) -- that needs the weights.
 | `stage2_gen_bench-coder32b.json` | its raw 60 completions (job 53057094) |
 | `stage2_score_bench-qwen38-27b.json` | **Incoming baseline.** Qwen3.8-27B, 50.00% (30/60), score job 53531932. |
 | `stage2_gen_bench-qwen38-27b.json` | its raw 60 completions (job 53496745) |
+| `stage2_score_bench-gemma4-31b.json` | **Gemma-4-31B-it, 66.67% (40/60)**, Gate-2 PASS, score job 53554777. |
+| `stage2_gen_bench-gemma4-31b.json` | its raw 60 completions (gen 53546905 + tail resume 53554776) |
 | `model_refresh_manifest.jsonl` | per-stage measured outcomes for the whole round |
 
 ## Frozen protocol these were measured under

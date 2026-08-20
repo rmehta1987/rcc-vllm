@@ -36,8 +36,8 @@ the measured per-model rates are in [Billing and Service Units](billing.md).
 
 Run `ai-session stop` the moment you stop working. An idle session still holds its GPUs
 and still bills. For interactive use the standard A100 configurations have the lowest
-hold cost; a faster H200 configuration (not currently available on this service) would only pay for itself under sustained,
-high-throughput generation.
+hold cost, and the cheapest capable coding configuration is Gemma-4-31B on two A40 cards,
+at a 1.0 SU/hour floor.
 
 ### Is my data private?
 
@@ -68,12 +68,14 @@ the session, so coordinate within the group on who runs it.
 
 ### Which model should I use?
 
-Use Qwen3.8-27B for code, the Qwen2.5-72B general model for mixed prose-and-code work
-or when you specifically want the largest general model, and Qwen3-4B for quick or
-low-cost tasks. For math and multi-step planning, the Qwen3 thinking models reason
-before answering — the coding default Qwen3.8-27B is itself a thinking model, or the small Qwen3-4B.
-All served models are text-only; if you need a vision model (for images), ask
-RCC staff.
+Use Qwen3.8-27B for code; Gemma-4-31B is a second coding option that is cheaper and
+faster, and the trade-off between the two is set out on
+[Coding Sessions](coding/overview.md#choosing-between-the-two-coding-models). Use the
+Qwen2.5-72B general model for mixed prose-and-code work or when you specifically want the
+largest general model, and Qwen3-4B for quick or low-cost tasks. For math and multi-step
+planning, the Qwen3 thinking models reason before answering — the coding default
+Qwen3.8-27B is itself a thinking model, as is the small Qwen3-4B. Both coding models accept
+images alongside text; the rest are text-only.
 
 Whichever you end up on, start small and scale up: get your prompts or agent setup working
 against the small model first — it loads faster, spends less time waiting for free GPUs, and
@@ -98,22 +100,20 @@ default.
 
 ### Which coding tool should I use?
 
-aider is the dependable default for editing files and does not need tool-calling. opencode
-is supported for full tool-calling agents but requires a small workaround file (see
+aider is the dependable default for editing files and needs no tool calling and no
+per-repository configuration. opencode is supported for full tool-calling agents; it needs a
+small `opencode.json` in the repository and a session started with `--agent` (see
 [opencode and Cline](coding/opencode.md)). Continue is the choice for in-editor use inside
 VS Code or JetBrains.
 
 ### My agent said it made a change, but nothing happened. Why?
 
-This was a real failure mode with the previous coding model (Qwen2.5-Coder-32B, retired
-2026-08-19), which never emitted the tool-call marker tokens its parser matched, so tool
-calls streamed back as plain text and agents reported success without editing anything.
-
-The current coding model, `qwen3.8_27B`, does not have this problem. It emits tool calls
-natively and they are parsed correctly (measured 2026-08-19, job 53534097: correct function
-name and arguments returned, and no spurious call on a prompt that needed none). If an agent
-still reports a change that did not happen, it is not this bug — check that the session was
-started with `--agent`, and see the [troubleshooting page](troubleshooting.md).
+Almost always because the session was started without `--agent`, so it accepts no tool
+calls: the tool JSON comes back as ordinary text and the agent has nothing to act on. Stop
+the session and restart it with `ai-session code --agent`. The other cause is a leftover
+`AGENTS.md` tool-call workaround file in your repository root, which earlier versions of
+these instructions asked for — delete it. See the
+[troubleshooting page](troubleshooting.md).
 
 ### How do I add an MCP tool to my agent?
 
@@ -128,8 +128,8 @@ including a labmate's files through shared project directories.
 
 Yes. Point any agent framework that speaks the standard OpenAI API format — for example
 PydanticAI, LangGraph, smolagents, or the OpenAI Agents SDK — at the session URL, using
-your session key as the API key. For reliable tool-calling, use the Qwen2.5-72B or Qwen3 model rather than the Coder
-model.
+your session key as the API key. Every served model emits tool calls reliably, so pick on
+capability and cost rather than on tool-calling support.
 
 ## Common problems
 

@@ -159,14 +159,11 @@ session serves well.
 
 !!! tip "Leave tab-autocomplete disabled"
     Autocomplete fires on keystrokes and requires low latency. Single-stream
-    generation for the 32B model on its two GPUs is approximately 66 ms per output
-    token (median time-per-output-token; billing benchmark of 2026-06-10,
-    midway3-0377.rcc.local, model-server version 0.10.2), which is not suitable for
-    completion-as-you-type. If you want autocomplete, run a separate small-model
-    session with `qwen3_4b` for that purpose only (see model selection on
-    [Coding Sessions](overview.md)); it reserves one A100 and bills a floor of
-    1.0 SU per hour (benchmarked 2026-06-02, midway3-0294.rcc.local, model-server
-    version 0.10.2).
+    generation on a two-GPU coding session runs at tens of milliseconds per output
+    token, which is not suitable for completion-as-you-type. If you want autocomplete,
+    run a separate small-model session with `qwen3_4b` for that purpose only (see model
+    selection on [Coding Sessions](overview.md)); it reserves one A100 and bills a floor
+    of 1.0 SU per hour.
 
 ## Connection failures
 

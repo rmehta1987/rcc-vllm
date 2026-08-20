@@ -90,7 +90,7 @@ ai-session code
 ```
 
 This submits the Slurm job, waits until the model is loaded (typically several
-minutes for the 32B model), starts the gateway, and prints a block containing the
+minutes for the 27B model), starts the gateway, and prints a block containing the
 gateway port, the exact aider command, and the SSH tunnel command. Leave this
 terminal running.
 
@@ -289,7 +289,7 @@ Older Continue versions use `~/.continue/config.json`:
 ```
 
 Use the chat and edit/apply features. Tab-autocomplete requires low latency and is
-not suitable for the 32B model on a shared session; leave it disabled, or run a
+not suitable for a two-GPU coding session; leave it disabled, or run a
 separate small-model session (for example `qwen3_4b`) for autocomplete only.
 
 ## 8. opencode
@@ -297,66 +297,35 @@ separate small-model session (for example `qwen3_4b`) for autocomplete only.
 opencode is an autonomous agent that drives the model through native function/tool
 calling: the model returns a structured call (a function name plus JSON arguments)
 that the agent executes — read a file, apply an edit, run a command. It is a
-supported client, verified end-to-end against this service on 2026-07-03. It is not
-the default client: it works only with the two workaround files described below, and
-occasional retries are still needed even with them. For routine editing, aider
-(Section 6) performs the same edits without function calling and needs no
-workarounds.
+supported client, verified end-to-end against this service. It is not the default
+client: it needs the project-local `opencode.json` described below, and occasional
+retries. For routine editing, aider (Section 6) performs the same edits without
+function calling and needs no per-repository configuration.
 
-### 8.1 Verified configuration and measured reliability
+### 8.1 Verified configuration
 
-The verification of 2026-07-03 (Slurm job 51391003) ran opencode 1.14.41
-non-interactively (`opencode run`) against a session started with:
+opencode 1.14.41 has been run non-interactively (`opencode run`) against a session started
+with `ai-session code --agent`, that is, the coding default on two A100 cards with tool
+calling enabled and the tool-call parser matched to the model. Three graded tasks were run
+in a scratch git repository — create a new file, modify an existing function, and read a
+file then edit it based on the value read (the third passes only if a read tool call
+actually preceded the edit) — and all three passed through native tool calls.
 
-```bash
-AGENT_CLIENT=1 MODEL=qwen3.8_27B TP=2 CONSTRAINT=A100 \
-  bash /project/rcc/mehta5/vllm/ai-session/run_coding_agent.sh up
-```
+Failures, when they occur, do not appear as server-side parse errors; they appear
+client-side as the tool-call JSON streaming back as ordinary assistant text, which opencode
+does not execute and does not report as an error. Review diffs as you would with any
+client, and re-issue the instruction if opencode prints JSON instead of acting.
 
-that is, Qwen3.8-27B on two A100-80GB, served by vLLM 0.10.2 with
-`--enable-auto-tool-choice --tool-call-parser hermes`. Three graded tasks were run
-in a scratch git repository: create a new file, modify an existing function, and
-read a file then edit it based on the value read (the third passes only if a read
-tool call actually preceded the edit).
+### 8.2 Why a project-local `opencode.json` is required
 
-| Quantity | Measured value (2026-07-03, job 51391003) |
-|---|---|
-| Graded tasks passed | 3 of 3, all through native tool calls (write; edit; read then edit) |
-| Task runs without the `AGENTS.md` workaround | 0 of 10 passed |
-| Task runs with both workaround files in place | 4 total: 3 passed on the first attempt, 1 needed one retry |
-| Tool-call parser exceptions in the vLLM server log | 0 |
-| Gateway requests | 52 (249,551 prompt tokens, 3,289 completion tokens) |
-| Session wall time and charge | 28 min 53 s; 0.9622 SU (reservation floor, 2.0 SU/h) |
-
-Failures do not appear as server-side parse errors; they appear client-side as the
-tool-call JSON streaming back as ordinary assistant text, which opencode does not
-execute and does not report as an error. One passing edit also left a harmless
-duplicated dead-code fragment inside the new function. Review diffs as you would
-with any client, and re-issue the instruction if opencode prints JSON instead of
-acting.
-
-### 8.2 Why two workaround files are required
-
-Out of the box (session correctly started with `AGENT_CLIENT=1`, provider block
-correctly configured), opencode failed 10 of 10 task attempts against this service,
-for two independent reasons, both measured on 2026-07-03:
-
-1. HISTORICAL (fixed 2026-08-19; the retired Qwen2.5-Coder-32B checkpoint did not generate the
-   `<tool_call>` / `</tool_call>` marker tokens (vocabulary ids 151657 and 151658)
-   that vLLM's hermes parser matches. At temperature 0, asked to reproduce a
-   well-formed tool call byte for byte, the model's first emitted token is `{"` —
-   the tags are omitted. The parser therefore never produces a `tool_calls`
-   response and the tool JSON is returned as plain message text. The fix is an
-   `AGENTS.md` rules file (below) that instructs the model to write the tags as
-   ordinary characters; spelled out as text, the tags survive generation and the
-   parser matches them after decoding.
-2. MCP servers configured in your personal `~/.config/opencode/opencode.json` are
-   advertised to the model as additional tools and inflate every prompt. In the
-   verification, one personal MCP server raised the first request to 27,925 input
-   tokens; vLLM rejected it (HTTP 400: input tokens plus the 8,192-token output
-   budget exceed the 32,768 context) and opencode surfaced no error. The fix is a
-   project-local `opencode.json` that disables personal MCP servers and restricts
-   opencode to the local provider.
+MCP servers configured in your personal `~/.config/opencode/opencode.json` are advertised
+to the model as additional tools and inflate every prompt. In the verification, one personal
+MCP server raised the first request to 27,925 input tokens; vLLM rejected it (HTTP 400:
+input tokens plus the 8,192-token output budget exceed the 32,768 context) and opencode
+surfaced no error. The fix is a project-local `opencode.json` that disables personal MCP
+servers and restricts opencode to the local provider. That file also keeps `small_model`
+pointed at the local provider, so opencode's session-title requests do not leave the
+cluster.
 
 ### 8.3 Procedure
 
@@ -403,7 +372,7 @@ The example is the exact file used in the verification:
       },
       "models": {
         "qwen3.8_27B": {
-          "name": "Qwen2.5 Coder 32B (local)",
+          "name": "Qwen3.8-27B (local)",
           "limit": {
             "context": 32768,
             "output": 8192
@@ -426,45 +395,12 @@ externally hosted model. `enabled_providers` restricts opencode to the local
 provider so no external API is selectable; `share: "disabled"` prevents session
 upload.
 
-Step 3 — create `AGENTS.md` in the repository root with exactly the following
-content. HISTORICAL: with the retired Qwen2.5-Coder-32B, without this file the model
-did not emit parseable tool calls (0 of 10
-task runs passed; see 8.2). The tag is deliberately spelled out in pieces: if the
-literal tag string appeared in the file, it would tokenize to the marker token the
-model cannot reproduce, and the instruction would be lost.
-
-```markdown
-# Rules
-
-CRITICAL tool-call format rule. When you invoke a tool, output the tool-call JSON
-wrapped in XML-style tags built EXACTLY as follows.
-
-- Opening tag: the character '<' + the word 'tool' + the characters '_call' + '>'.
-- Closing tag: the characters '</' + the word 'tool' + the characters '_call' + '>'.
-
-So every tool invocation looks like (spelling the tags out):
-OPENTAG newline JSON newline CLOSETAG, where OPENTAG is '<'+'tool'+'_call'+'>' and
-CLOSETAG is '</'+'tool'+'_call'+'>'. Write the tags as literal text characters.
-
-IMPORTANT: the opening tag ENDS with the '>' character. The exact character
-sequence is: less-than sign, t, o, o, l, underscore, c, a, l, l, greater-than
-sign. The '>' must come IMMEDIATELY after the second 'l', with no newline and
-no space before it. Only AFTER the '>' do you start a new line with the JSON.
-Emit the opening tag exactly once per call, never twice.
-
-Never output a bare JSON object without these tags. Never use any other tag name.
-The JSON has the form {"name": "<name of tool>", "arguments": { ... }}.
-One JSON object per tag pair. Output nothing else around the call.
-
-Common mistakes you MUST avoid, on EVERY step of the conversation (including
-after you have received tool results):
-- WRONG: writing the opening tag but stopping before the '>' (e.g. a line that
-  ends after the second 'l'). The tag is INVALID without its final '>'.
-- WRONG: writing the opening tag twice in a row.
-- WRONG: outputting the JSON with no tags at all.
-If your previous message in this conversation contains one of these mistakes,
-do NOT imitate it. Emit the correct, complete tags every single time.
-```
+Step 3 — if the repository root has an `AGENTS.md` tool-call workaround file from an earlier
+version of these instructions — the one that spells out `<tool_call>` tags character by
+character — **delete it**. Every served model emits tool calls natively and the launcher
+selects the parser that matches the model, so that file now instructs the model to
+hand-write a format that is not its own. `AGENTS.md` remains fine for ordinary project
+instructions; it is only the tool-call workaround that has to go.
 
 Step 4 — sanity-check before spending tokens, then run:
 
@@ -477,11 +413,9 @@ If `opencode models` lists anything besides `rcc/qwen3.8_27B`, the
 project-local `opencode.json` is not being picked up; run opencode from the
 directory containing it.
 
-Cline (a VS Code extension) is the same class of tool. It has not been verified
-against this service; reason 1 in 8.2 is a property of the served model, so Cline
-is expected to need an equivalent rules file (its mechanism is `.clinerules`, not
-`AGENTS.md`). If tool calls fail repeatedly with either tool, use aider, which
-performs the same edits without function calling.
+Cline (a VS Code extension) is the same class of tool, configured with the same three
+values. It has not been verified against this service. If tool calls fail repeatedly with
+either tool, use aider, which performs the same edits without function calling.
 
 ## 9. Model selection
 
@@ -494,9 +428,18 @@ the basis for the per-token charge, not single-stream latency.
 
 | Model key | Parameters | Config | Prefill (tok/s) | Decode (tok/s) | Reservation floor |
 |---|---|---|---:|---:|---:|
-| `qwen3.8_27B` (default) | 32B | TP=2, 2×A100-80GB | 4773 | 1679 | 2.0 SU/h |
-| `qwen2.5_72B` | 72B | TP=4, 4×A100-80GB | 2901 | 1123 | 4.0 SU/h |
-| `qwen2.5_72B` | 72B | TP=2, 2×H200 | 7594 | 2329 | 6.0 SU/h |
+| `qwen3.8_27B` (default) | 27.8B | TP=2, 2×A100 | — | — | 2.0 SU/h |
+| `qwen3.8_27B` | 27.8B | TP=2, 2×H100 NVL | 11828 | 3493 | 4.0 SU/h |
+| `gemma4_31B` | 30.7B | TP=2, 2×A40 | 2301 | 349 | 1.0 SU/h |
+| `gemma4_31B` | 30.7B | TP=2, 2×A100-40GB | 3337 | 336 | 2.0 SU/h |
+| `qwen2.5_72B` | 72B | TP=4, 4×A100-80GB | 2914 | 1191 | 4.0 SU/h |
+| `qwen3_4b` | 4B | TP=1, 1×A100-80GB | 22167 | 5114 | 1.0 SU/h |
+
+`qwen3.8_27B` has no measured record for the A100 tier it runs on by default, so its
+sessions there bill the reservation floor with no token term. Note the two `gemma4_31B`
+rows: A40 is both the faster and the cheaper tier for this model, which inverts the usual
+ordering — the A40's 46 GiB leaves roughly double the KV-cache room of a 40 GiB A100 for a
+model that needs 30.4 GiB per GPU, and it bills at half the A100 weight.
 
 Overrides:
 
@@ -504,22 +447,25 @@ Overrides:
 # general 72B model (chooses TP=4 A100 automatically):
 ai-session code --model qwen2.5_72B
 
-# coder model on the H200 throughput tier (operator-style env override):
-CONSTRAINT=H200 ai-session code
+# the second coding option, on its cheapest tier:
+CONSTRAINT=a40 ai-session code --model gemma4_31B
 ```
 
-The coder model is the default because it is specialized for code, uses half the GPUs
-of the 72B (TP=2 versus TP=4), and has a lower measured per-token cost than the 72B at
-every benchmarked tier. The 72B is preferable for mixed code-and-prose work or when
-the larger general model is specifically wanted.
+`qwen3.8_27B` is the default because it scored highest of the candidates evaluated with
+thinking enabled and uses half the GPUs of the 72B (TP=2 versus TP=4). `gemma4_31B` scored
+higher on the same frozen subset, but with thinking disabled — its own default mode and not
+Qwen's — so the two figures are not like-for-like; it is the cheaper and faster option, and
+on A40 it is the least expensive capable coding configuration here. The 72B is preferable
+for mixed code-and-prose work or when the larger general model is specifically wanted.
 
-`CONSTRAINT=A100` selects the 80 GB A100 nodes (uppercase). The 32B at TP=2 requires
-two 80 GB cards; the 40 GB A100 nodes (lowercase `a100`) are not sufficient.
+`CONSTRAINT=A100` selects the 80 GB A100 nodes (uppercase); `CONSTRAINT=a40` selects A40.
+`qwen3.8_27B` needs 25.7 GiB per GPU at TP=2 and `gemma4_31B` 30.4 GiB, so both also fit
+the 40 GB A100 cards.
 
 ## 10. Context window and prompt sizing
 
-Coding sessions serve a 32768-token context (set by `MAX_MODEL_LEN`, default 32768).
-This is the native context length of the Qwen2.5 models; no rope/YaRN scaling is
+Coding sessions serve a 32768-token context (set by `MAX_MODEL_LEN`, default 32768),
+within the native context length of every coding model offered; no rope/YaRN scaling is
 applied. Chat sessions started by other helpers default to 8192.
 
 The aider metadata file declares the split as 28000 input tokens and 4096 output
@@ -527,10 +473,10 @@ tokens, leaving headroom so that prompt plus generated tokens cannot exceed 3276
 If you add more file content than fits in 28000 tokens, aider will report the prompt
 as too long; remove files with `/drop` or reset history with `/clear`.
 
-Single-stream generation latency for the 32B at TP=2 is approximately 66 ms per
-output token (measured median time-per-output-token), i.e. on the order of 15 tokens
-per second as perceived by one interactive user. Aggregate throughput across
-concurrent requests is higher (the table in Section 9).
+Single-stream generation latency at TP=2 is on the order of tens of milliseconds per
+output token, i.e. roughly 15 to 30 tokens per second as perceived by one interactive
+user. Aggregate throughput across concurrent requests is much higher (the table in
+Section 9).
 
 ## 11. Billing
 
@@ -543,12 +489,13 @@ floor_su = w_gpu(tier) * N_gpus * reserved_wall_hours
 billed   = max(token_su, floor_su)
 ```
 
-`w_gpu` is the GPU-tier weight (A100 = 1.0, H200 = 3.0); `N_gpus` is the number of
+`w_gpu` is the GPU-tier weight (A100 = 1.0, A40 = 0.5, H100 = 2.0); `N_gpus` is the number of
 GPUs reserved; `prefill_tps` and `decode_tps` are the measured rates in Section 9.
 For interactive coding the request volume is low and the reservation floor dominates,
 so the practical cost is `w_gpu * N_gpus * hours`: 2.0 SU per hour for the default
-32B at TP=2 on A100. The 32K context does not change this materially, because the
-floor is independent of token counts.
+`qwen3.8_27B` at TP=2 on A100, or 1.0 SU per hour for `gemma4_31B` at TP=2 on A40. The
+32K context does not change this materially, because the floor is independent of token
+counts.
 
 `down` prints the itemized charge for the run, and the same summary is written to
 `logs/usage/` under your state directory. `status` and `down` do not cost SU; only
@@ -569,7 +516,7 @@ appropriate for unpublished or otherwise restricted source code.
 | `Unknown context window size` | The metadata file was not passed. Add `--model-metadata-file /project/rcc/mehta5/vllm/ai-session/aider_model_metadata.json`. The command printed by `up` already includes it. |
 | Prompt reported as too long | Added file content exceeds the 28000-token input budget. Remove files with `/drop` or clear history with `/clear`. |
 | aider rejects a diff edit | The model produced a malformed diff. Retry, or restart with `EDIT_FORMAT=whole ai-session code`. |
-| Tool-call parse errors (opencode, Cline) | Expected for a locally served model. Confirm the session was started with `AGENT_CLIENT=1`; if errors persist, use aider. |
+| Tool calls come back as plain text (opencode, Cline) | The session was started without `--agent`, or a leftover `AGENTS.md` tool-call workaround file is present in the repository root. Restart with `ai-session code --agent`, delete that file, and if it persists use aider. |
 | `model 'qwen3.8_27B' is not fully staged` | The model weights are not completely on disk. Wait for staging to finish, or start with `MODEL=qwen2.5_72B`. |
 | Port already in use at start | Another session (yours or another user's) holds the default port. Choose another: `GW_PORT=8490 ai-session code`. |
 | Client cannot connect from laptop | The SSH tunnel is not open, or points at the wrong login node. Use the tunnel command printed by `up`, which names the correct node. |
@@ -579,8 +526,8 @@ appropriate for unpublished or otherwise restricted source code.
 
 The service serves an OpenAI-compatible endpoint via vLLM. aider is the default
 client because its edit mechanism (chat completions plus text diffs) does not depend
-on function calling, which is the least reliable part of serving a local model
-through vLLM. Continue and opencode are documented for users who prefer an in-editor
+on function calling and so needs no per-repository configuration at all. Continue and
+opencode are documented for users who prefer an in-editor
 workflow or an autonomous agent, and connect to the same endpoint. The endpoint, not
 the choice of client, is the fixed interface; any OpenAI-compatible tool can use it.
 

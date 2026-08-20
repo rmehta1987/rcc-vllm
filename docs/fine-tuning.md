@@ -277,11 +277,9 @@ learning.
   [Step 3 script](#step-3-write-the-training-script) above with the LoRA config
   removed (so every weight updates) and a sharding backend added — DeepSpeed
   ZeRO-3 or PyTorch FSDP — because the full model no longer fits on one GPU.
-  Point `BASE` at a checkpoint you have staged. NOTE (2026-08-19): the
-  `Qwen3-32B` weights referenced below were deleted from disk; stage a base
-  checkpoint yourself, or use `/project/rcc/mehta5/vllm/models/Qwen3.8-27B`.
-  Format each
-  trajectory with that model's own chat template, exactly as in the LoRA example.
+  Point `BASE` at a checkpoint you have staged yourself, or at a served one such as
+  `/project/rcc/mehta5/vllm/models/Qwen3.8-27B`. Format each trajectory with that
+  model's own chat template, exactly as in the LoRA example.
 - **Phase 2 (RL)** uses GRPO (Group Relative Policy Optimization) with per-prompt
   rollout groups and separate rollout and actor-update parallelism — which
   frameworks like [verl](https://github.com/volcengine/verl) and

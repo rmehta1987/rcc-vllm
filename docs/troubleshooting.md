@@ -112,36 +112,24 @@ EDIT_FORMAT=whole ai-session code
 
 **Symptom.** The agent reports that the model responded, but no file changed and
 no command ran; the tool-call JSON appears as plain text in the model's reply.
-No error is raised on either end. This is the measured failure mode (verified
-2026-07-03, opencode 1.14.41): the server log contained zero tool-call parser
-exceptions while every out-of-the-box task run failed.
+No error is raised on either end.
 
-**Cause (historical).** The coding model at the time, Qwen2.5-Coder-32B, did not emit
-the `<tool_call>` marker tokens that the server's tool-call parser matched, so the tool
-JSON streamed back as ordinary assistant text that the agent ignored.
-
-**Fixed as of 2026-08-19.** The coding default is now `qwen3.8_27B`, which emits tool
-calls natively. Two things had to change together, and both are now in place: the model
-emits calls in an XML form (`<tool_call><function=NAME><parameter=K>v</parameter></function></tool_call>`),
-and the launcher selects the matching `qwen3_coder` parser for it rather than `hermes`,
-which cannot parse that form. Measured 2026-08-19 (job 53534097): with `hermes` the calls
-came back unparsed; with `qwen3_coder` they parsed correctly.
-
-**If you still see this,** you do not need the old `AGENTS.md` workaround — it was written
-for a model that never emitted the tags and is unnecessary, and potentially counterproductive,
-for the current model. Check instead that the session was started with `--agent`.
-
-**Check.** Also confirm the session was started with tool calling enabled — it
-is off by default. Tool calling is on only if you started with:
+**Cause 1: the session was started without `--agent`.** Tool calling is off by default, so
+a session started for aider or Continue accepts no tool calls. Stop it and start it again:
 
 ```bash
+ai-session stop
 ai-session code --agent
 ```
 
-If the session was started without `--agent`, stop it with `ai-session stop` and
-start it again with the line above.
+**Cause 2: a leftover `AGENTS.md` workaround file.** If your repository root has an
+`AGENTS.md` telling the model to spell out `<tool_call>` tags character by character —
+required by earlier versions of these instructions — delete it. Every served model emits
+tool calls natively, and the launcher selects the parser that matches the model, so that
+file now asks for a format that is not the model's own. `AGENTS.md` is fine for ordinary
+project instructions; it is only the tool-call workaround that has to go.
 
-If tool calls still misbehave with `--agent` set and `AGENTS.md` in place, use
+If tool calls still misbehave with `--agent` set and no workaround file present, use
 [aider](coding/aider.md), which performs the same edits through chat completions
 and text diffs without function calling, against the same endpoint.
 
@@ -166,7 +154,7 @@ again, or start a model that is already staged, for example:
 ai-session code --model qwen2.5_72B
 ```
 
-!!! warning "The 72B reserves four GPUs and bills a higher floor than the 32B default"
+!!! warning "The 72B reserves four GPUs and bills a higher floor than the coding default"
     See the rate table on [Billing and Service Units](billing.md); stop with
     `ai-session stop` when finished.
 
@@ -277,7 +265,7 @@ ai-session code
 appears to hang.
 
 **Cause.** This is usually normal. The command blocks until the model has loaded
-and answered a probe; loading the 32B coding model typically takes several
+and answered a probe; loading a coding model typically takes several
 minutes after the GPUs are assigned. It waits up to 900 seconds by default
 (override with the `READY_TIMEOUT` environment variable, in seconds). The other
 common case is that the session has not been assigned GPUs yet because the

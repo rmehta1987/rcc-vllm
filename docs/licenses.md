@@ -9,38 +9,29 @@ they reach it over their own tunnels — the sharing model described on
 available to other people, which is where the licenses differ. This page states, per
 model, what the license is, where its authoritative text sits on disk, and what you
 must do when you serve it to others. It is a practical summary, not legal advice; the
-on-disk license file is the controlling text in every case.
+on-disk license text is the controlling one in every case.
 
 ## License at a glance
 
-In the table, `<models>` is the service's model store, `$AISESSION_HOME/models`
-after `module load ai-session`.
+Every model this service offers is Apache-2.0 except `qwen2.5_72B`, which is under the
+Qwen (Tongyi) community license. In the table, `<models>` is the service's model store,
+`$AISESSION_HOME/models` after `module load ai-session`.
 
-| Model key | License | On-disk license file | What serving to others requires |
+| Model key | License | Authoritative text on disk | What serving to others requires |
 |---|---|---|---|
 | `qwen3.8_27B` | Apache-2.0 | `<models>/Qwen3.8-27B/LICENSE` | Nothing beyond keeping the license and any `NOTICE` with redistributed weights. |
-| `gemma4_31B` | Apache-2.0 | `<models>/Gemma-4-31B-it/LICENSE` | Same as above. Note Gemma 4 is Apache-2.0 and ungated, unlike earlier Gemma releases. |
+| `gemma4_31B` | Apache-2.0 | `<models>/Gemma-4-31B-it/README.md` (front matter, with a link to Google's license page) | Same as above. Gemma 4 is Apache-2.0 and ungated, unlike earlier Gemma releases. |
 | `qwen3_4b` | Apache-2.0 | `<models>/Qwen3-4B/LICENSE` | Same as above. |
 | `qwen2.5_0.5B` | Apache-2.0 | `<models>/Qwen2.5-0.5B-Instruct/LICENSE` | Same as above. |
+| `qwen3.5_122B` | Apache-2.0 | `<models>/Qwen3.5-122B-A10B-FP8/LICENSE` | Same as above. Registered but not in the served set; see [Command Reference](reference.md#models). |
 | `qwen2.5_72B` | Qwen (Tongyi) community license | `<models>/Qwen2.5-72B-Instruct/LICENSE` | Retain the Qwen attribution notice; observe the "Built with Qwen" and large-scale-use terms below. |
 
-Models on the roadmap (see [Command Reference](reference.md#models)) will be added to
-this table with their licenses when they become servable: `qwen3.5_122B`
-(Qwen3.5-122B-A10B) is Apache-2.0.
-
-Retired 2026-08-19 and removed from disk: `qwen2.5_coder_32B` and `qwen3_32B`
-(both Apache-2.0), superseded by `qwen3.8_27B`; and the unserved GLM-5.2-FP8 (MIT)
-and DeepSeek-V4-Flash checkpoints.
-
-## The Apache-2.0 models
-
-`qwen3.8_27B`, `qwen3_4b`, and `qwen2.5_0.5B` are released under
-the Apache License, Version 2.0. Apache-2.0 is a permissive open-source license: it places no
-restriction on serving the model to other users and imposes no in-product attribution
-requirement. The only standing obligation is that if you redistribute the weights
-themselves (copy them elsewhere, not merely serve inference from them), you keep the
-`LICENSE` file and any accompanying `NOTICE` with the copy. Serving these models
-through ai-session, whether to yourself or to your lab, needs nothing further.
+Apache-2.0 is a permissive open-source license: it places no restriction on serving the
+model to other users and imposes no in-product attribution requirement. The only standing
+obligation is that if you redistribute the weights themselves — copy them elsewhere, rather
+than merely serve inference from them — you keep the license text and any accompanying
+`NOTICE` with the copy. Serving these models through ai-session, whether to yourself or to
+your lab, needs nothing further.
 
 ## The Qwen 72B community license
 
@@ -68,21 +59,11 @@ model is offered to others as a service:
 When you host `qwen2.5_72B` for your lab through ai-session, the practical duty is the
 attribution notice; the full and controlling terms are in the on-disk `LICENSE` above.
 
-## The Llama 3.1 license (retired)
-
-`llama3.1_70B` (Meta-Llama-3.1-70B-Instruct) was retired on 2026-08-19 and its weights
-were removed. It was the only model here under a non-permissive licence, and the only one
-requiring a per-user acknowledgment before it could be served. No obligations remain: the
-model is not distributed, not served, and not staged.
-
-Every model the service now offers is Apache-2.0 except `qwen2.5_72B`, which is under the
-Qwen (Tongyi) community licence described above.
-
 ## Reading the authoritative text
 
 Every license summarized here is quoted in full in the on-disk file listed in the
 table. To read one directly on a login node (after `module load ai-session`), for
-example the Qwen community licence:
+example the Qwen community license:
 
 ```bash
 less "$AISESSION_HOME/models/Qwen2.5-72B-Instruct/LICENSE"

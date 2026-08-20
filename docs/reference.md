@@ -88,23 +88,20 @@ directory.
 
 The license terms and the obligations that apply when you serve these models to
 other people are set out on [Model licenses](licenses.md). Every model offered is
-Apache-2.0 except `qwen2.5_72B`, which is under the Qwen (Tongyi) community licence.
-No model requires a per-user acknowledgment any more.
+Apache-2.0 except `qwen2.5_72B`, which is under the Qwen (Tongyi) community license.
+No model requires a per-user acknowledgment.
 
-The coding model changed on 2026-08-19. `qwen3.8_27B` (Qwen3.8-27B, Apache-2.0)
-replaced `qwen2.5_coder_32B` as the `code` preset default on measured evidence: on a
-frozen 60-problem LiveCodeBench subset, scored by an identical harness on an identical
-serve environment, it reached 50.0% pass@1 against the previous default's 26.7% — a
-23.3-point gain. It was the best of six candidates evaluated, and it beat the much
+### The coding models
+
+`qwen3.8_27B` (Qwen3.8-27B) is the `code` preset default. On a frozen 60-problem
+LiveCodeBench subset, scored by an identical harness on an identical serve environment, it
+reaches 50.0% pass@1. It was the best of six candidates evaluated, and it beat the much
 larger `qwen3.5_122B` (45.0%) at under half the footprint, though that 5-point gap sits
 inside the measurement's noise band. It is a thinking model whose reasoning depth is
-adjustable per request (`reasoning_effort`: `low`, `medium`, or `xhigh`, its default),
-and a vision-language model that accepts images and video alongside text — the first
-served model here to do so. It serves BF16 at TP=2 under vLLM 0.26.0 (the
-`vllm-serve-cu129` env), which the launcher now selects automatically for this model
-family. Tool calling works natively with the `qwen3_coder` parser, also selected
-automatically — the `AGENTS.md` workaround the older coding model needed is no longer
-required, and should be removed if you still have one.
+adjustable per request (`reasoning_effort`: `low`, `medium`, or `xhigh`, its default), and a
+vision-language model that accepts images and video alongside text. It serves BF16 at TP=2
+under vLLM 0.26.0, which the launcher selects automatically for this model family, and its
+tool calling works natively with the `qwen3_coder` parser, also selected automatically.
 
 It runs on **A100** by default (measured: 25.7 GiB of weights per GPU at TP=2, leaving
 44 GiB of KV cache — over a million tokens). A100 is the default rather than the faster
@@ -112,17 +109,31 @@ H100 for a practical reason: H100 nodes on this cluster belong to individual res
 groups, so an H100 default would make the coding model unstartable for most users. Pass
 `CONSTRAINT=H100` if you have access to that tier and want it.
 
-Three caveats worth knowing.
+Two caveats worth knowing.
 
 1. **Billing.** Its measured rate record is for the H100 tier, so an A100 session bills
    the reservation floor (GPU time held) with no token-metered component until an A100
    record is measured. The A100 floor is half the H100 floor, so this is not a penalty.
 2. **Benchmark figure.** The 50.0% was measured with thinking *disabled*, which is not
    this model's default mode. Treat it as a lower bound.
-3. **Serve configuration.** It runs with CUDA graphs disabled (`--enforce-eager`), set
-   automatically. With graphs enabled, vLLM selects a multi-node NVLink all-reduce kernel
-   that crashes during start-up on this hardware. The cost is decode throughput; the
-   alternative is a server that never becomes ready.
+
+`gemma4_31B` (Gemma-4-31B-it) is the second coding option, reached with
+`ai-session code --model gemma4_31B`. It scored 66.7% on the same frozen subset, also
+accepts images, and also serves BF16 at TP=2. Two things distinguish it: its thinking mode
+is **off** by default and opt-in per request, and it runs on **A40**, where it is both
+faster and half the price of the same model on A100. That comparison — including why the
+66.7% and the 50.0% above are not like-for-like — is set out on
+[Choosing between the two coding models](coding/overview.md#choosing-between-the-two-coding-models).
+It has measured rate records for the a40 and a100 tiers at TP=2; on any other tier it bills
+the reservation floor.
+
+!!! warning "Delete any `AGENTS.md` tool-call workaround file you still have"
+    Earlier versions of these instructions asked for an `AGENTS.md` file in your repository
+    root that told the model to spell out `<tool_call>` tags character by character. Both
+    coding models emit tool calls natively, so that file now instructs the model to
+    hand-write a format that is not its own — at best noise, and actively counterproductive
+    with the current models. Delete it. `AGENTS.md` remains fine for ordinary project
+    instructions.
 
 ### Which GPUs each model needs
 
@@ -151,17 +162,10 @@ coding benchmark anyway (50.0% vs 45.0%).
 Everything else runs on A100, which is available through the `beagle3` partition and the
 open `gpu` partition. No special access is needed.
 
-`qwen3.5_122B` (Qwen3.5-122B-A10B, FP8) is registered and validated on both Hopper tiers
-at TP=2: on two H200s (58.24 GiB weights per GPU, 62.89 GiB KV) and on two H100 NVL cards
-(same weights, 20.85 GiB KV — just over a million tokens of cache). It is not yet in the
-served set because it has no measured billing rate. Being FP8 it requires Hopper; Ampere
-(A100) has no FP8 tensor cores and would fail on load, so the tier is pinned accordingly.
-
-Retired 2026-08-19 and deleted from disk: `qwen2.5_coder_32B` and `qwen3_32B`, both
-superseded by `qwen3.8_27B`; and the GLM-5.2-FP8 and DeepSeek-V4-Flash checkpoints,
-neither of which ever served — GLM-5.2's 755 GB exceeded a single H200 node's 564 GB and
-needed a multi-node serving path that was never built, and DeepSeek-V4-Flash failed its
-smoke test because its FP4 expert kernels require a newer driver than the fleet runs.
+`qwen3.5_122B` is registered and validated on both Hopper tiers at TP=2: on two H200s
+(58.24 GiB of weights per GPU, 62.89 GiB of KV cache) and on two H100 NVL cards (same
+weights, 20.85 GiB of KV — just over a million tokens). It is not in the served set because
+it has no measured billing rate.
 
 ### Rough capability frame of reference
 
@@ -173,7 +177,8 @@ parity.
 | Served / staged model | Rough closed-weight analog | Basis (approximate) |
 |---|---|---|
 | `qwen3_4b` | GPT-4o-mini class (light tasks) | 4B thinking model; strong on math for its size |
-| `qwen3.8_27B` *(coding default)* | 2026 open-weight frontier for its size | 50.0% vs the retired coder-32B's 26.7% on our frozen LiveCodeBench subset; vendor-reported SWE-bench Pro 61.7 and Terminal-Bench 2.1 73.0, above the much larger Qwen3.7-Plus on both. Vendor figures are self-reported and no independent code-specific evaluation exists yet. |
+| `qwen3.8_27B` *(coding default)* | 2026 open-weight frontier for its size | 50.0% pass@1 on our frozen LiveCodeBench subset, measured thinking-off and so a lower bound; vendor-reported SWE-bench Pro 61.7 and Terminal-Bench 2.1 73.0, above the much larger Qwen3.7-Plus on both. Vendor figures are self-reported and no independent code-specific evaluation exists yet. |
+| `gemma4_31B` *(second coding option)* | 2026 open-weight frontier for its size | 66.7% pass@1 on the same frozen subset, measured thinking-off — which is this model's own default but not Qwen's, so the two figures are not like-for-like |
 | `qwen2.5_72B` | GPT-4-turbo / GPT-4o-mini (general) | strong 2024 general model, a generation behind 2026 frontier |
 | `qwen3.5_122B` *(validated; cutover pending)* | ≈ Claude Sonnet 4.5 / GPT-5-mini tier | vision-language mixture-of-experts model (accepts images); scores higher than GPT-5-mini on the BFCL-V4 tool-use benchmark (72.2 vs 55.5), lower than Claude Opus |
 
@@ -186,13 +191,17 @@ To serve a model you fine-tuned yourself alongside its base model, add
 by your fine-tune. Requirements and examples are on
 [Your Own Fine-Tuned Model](lora.md).
 
-Qwen3 sessions serve with a reasoning parser, so the model's chain of thought is
-returned in a separate `reasoning_content` field and the answer stays in
-`content` — the raw `<think>…</think>` block is not mixed into the reply. Qwen2.5
-models do not think and are served without it. Clients differ in whether
-they surface `reasoning_content`: opencode displays it as a Thinking block
-(`opencode run --thinking`, or in its TUI), while aider shows only the answer. See
-[opencode](coding/opencode.md#seeing-the-models-reasoning-qwen3-only).
+### Thinking, and where the reasoning text goes
+
+`qwen3.8_27B` and `qwen3_4b` think before answering and are served with a reasoning
+parser, so the chain of thought is returned in a separate `reasoning_content` field and the
+answer stays in `content` — the raw `<think>…</think>` block is not mixed into the reply.
+`gemma4_31B` can think but does not by default; you opt in per request, and the
+[coding overview](coding/overview.md#choosing-between-the-two-coding-models) records what
+that costs. The Qwen2.5 models do not think. Clients differ in whether they surface
+`reasoning_content`: opencode displays it as a Thinking block (`opencode run --thinking`, or
+in its TUI), while aider shows only the answer. See
+[opencode](coding/opencode.md#seeing-the-models-reasoning).
 
 ## The session access key
 
@@ -256,8 +265,7 @@ directory, and for streaming requests the gateway asks the engine to report usag
 in the final stream chunk. `ai-session stop` consumes this log as the billing
 source, so scripted clients need no billing instrumentation. Server-side tool
 calling for agent frameworks requires a session started with
-`ai-session code --agent`; opencode support was verified against the live service
-on 2026-07-03; see the [coding agents guide](coding/opencode.md) for caveats.
+`ai-session code --agent`; see the [coding agents guide](coding/opencode.md).
 
 ??? question "What does the gateway do with paths other than /v1?"
     The gateway proxies `/v1`, `/metrics`, `/health`, `/version`, `/ping`,

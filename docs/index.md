@@ -84,7 +84,8 @@ the preset's default.
 
 | Preset | Model key | Weights | Use | Context (tokens) | GPUs it runs on | License |
 |---|---|---|---|---:|---|---|
-| `code` | `qwen3.8_27B` | Qwen3.8-27B | Coding | 32768 | 2 x A100 | Apache-2.0 |
+| `code` | `qwen3.8_27B` | Qwen3.8-27B | Coding (default) | 32768 | 2 x A100 | Apache-2.0 |
+| `code --model gemma4_31B` | `gemma4_31B` | Gemma-4-31B-it | Coding (alternative) | 32768 | 2 x A40 or A100 | Apache-2.0 |
 | `chat` | `qwen2.5_72B` | Qwen2.5-72B-Instruct | General chat | 8192 | 4 x A100-80GB | Qwen (Tongyi) community license |
 | `fast` | `qwen3_4b` | Qwen3-4B | Small and fast; lowest cost | 8192 | 1 x A100 | Apache-2.0 |
 

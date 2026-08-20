@@ -175,7 +175,7 @@ if [ "${ENFORCE_EAGER}" = "1" ]; then EAGER_FLAG="--enforce-eager"; fi
 # the user. Those models serve on vllm-serve-cu129 (vLLM 0.26.0, cu129), the env every
 # model-refresh Gate-1/2 run used. Everything else keeps the proven 0.10.2 path.
 case "${MODEL_KEY}" in
-  qwen3.5*|qwen3.6*|qwen3.8*)
+  qwen3.5*|qwen3.6*|qwen3.8*|gemma4*)
     ENV_PATH=/project/rcc/mehta5/conda-envs/vllm-serve-cu129
     echo "[launch] model ${MODEL_KEY} requires vLLM 0.26.0; ENV_PATH=${ENV_PATH}" >&2
     ;;
@@ -191,6 +191,11 @@ if [ "${AGENT_CLIENT}" = "1" ]; then
     # failure that broke opencode on Qwen2.5-Coder. MEASURED job 53534097: hermes
     # MODEL_EMITS_PARSER_MISMATCH (0 calls, raw tag present); qwen3_coder PARSER_WORKS
     # (correct name+args, and no spurious call on a no-tool prompt).
+    # Gemma 4 emits a THIRD tool-call dialect: <tool_call>call:NAME{...}. Neither hermes
+    # (JSON) nor qwen3_coder (XML) parses it. MEASURED job 53544725: the gemma4 parser
+    # returns correct name+args on both tool cases and no spurious call on a no-tool prompt;
+    # functiongemma returns nothing at all.
+    gemma4*)  TOOL_PARSER="gemma4" ;;
     qwen3.5*|qwen3.6*|qwen3.8*)  TOOL_PARSER="qwen3_coder" ;;
     # Qwen3-32B emits JSON inside <tool_call> (0 XML markers in its template), so
     # hermes IS correct for it -- do not fold it into the arm above.
@@ -234,6 +239,19 @@ case "${MODEL_KEY}" in
   qwen3*)
     REASONING_FLAG="--reasoning-parser qwen3"
     echo "[launch] Qwen3 reasoning parser enabled (reasoning split from the answer)" >&2
+    ;;
+  # Gemma 4 has its own reasoning parser (vLLM reasoning/__init__.py: gemma4 ->
+  # Gemma4ParserReasoningAdapter). It emits the chain of thought on a separate
+  # <|channel>thought ... <channel|> channel. VERIFIED job 53587542: with this parser the
+  # CoT lands in `reasoning` (2540 chars) and the answer alone in `content`. Without it the
+  # CoT would contaminate content. Needed even though enable_thinking defaults to FALSE,
+  # because the template also turns thinking on whenever tools or a system message are
+  # present -- i.e. exactly in agent sessions.
+  gemma4*)
+    REASONING_FLAG="--reasoning-parser gemma4"
+    echo "[launch] Gemma 4 reasoning parser enabled (thinking is OFF by default; enable it" >&2
+    echo "[launch]   per request with chat_template_kwargs.enable_thinking=true -- MEASURED" >&2
+    echo "[launch]   cost 5-12x tokens and wall time, so leave it off unless you need it)" >&2
     ;;
 esac
 

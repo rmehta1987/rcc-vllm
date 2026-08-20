@@ -29,6 +29,7 @@ MODEL_REGISTRY = {
     "qwen3_4b": f"{MODELS_ROOT}/Qwen3-4B",                  # single-GPU benchmark anchor
     "qwen3.5_122B": f"{MODELS_ROOT}/Qwen3.5-122B-A10B-FP8", # MoE, native FP8 -- serves TP=2 on 2xH200 (53069683) AND 2xH100 NVL (53538328)
     "qwen3.8_27B": f"{MODELS_ROOT}/Qwen3.8-27B",           # coding INCUMBENT -- dense 27.8B BF16, hybrid GDN+attn
+    "gemma4_31B": f"{MODELS_ROOT}/Gemma-4-31B-it",          # SECOND coding option -- dense 30.7B BF16, Apache-2.0
     "qwen2.5_0.5B": f"{MODELS_ROOT}/Qwen2.5-0.5B-Instruct", # smoke test only -- never a billing ref
 }
 
@@ -104,7 +105,26 @@ MODEL_REGISTRY = {
 #     one of three models with an honest (non-floor) billing rate. qwen3.8_27B has no
 #     rate row yet, so coding sessions now bill the reservation FLOOR until a
 #     bench_billing.py run on the cu129 env fills one. That measurement is owed.
-PHASE1_SERVED = {"qwen2.5_72B", "qwen3_4b", "qwen3.8_27B"}
+# gemma4_31B added 2026-08-20 as a SECOND coding option, NOT a replacement. qwen3.8_27B
+# remains the `code` preset default; Gemma is reached with `--model gemma4_31B`.
+# Basis: same frozen LCB-60 subset/decode/harness -- 66.67% (40/60) vs the 27B's 50.00%,
+# Gate-2 PASS, score job 53554777. hard 14/30 vs 6/30. ~2.8 sigma, outside the n=60 noise
+# band. It is NOT wired as the default because that comparison has a known asymmetry: the
+# frozen decode pins enable_thinking:false, which is Gemma's NATIVE default but suppresses
+# Qwen3.8's xhigh default, so the 27B's 50.00% is a lower bound. A thinking-on Qwen rerun
+# is owed before any swap.
+# The two differ in character, which is why offering both is useful:
+#   qwen3.8_27B  thinks by default (reasoning_effort xhigh); has an MTP draft head (+53%
+#                decode, unused); forced --enforce-eager by a CUDA-graph crash.
+#   gemma4_31B   thinking OFF by default, opt-in via chat_template_kwargs.enable_thinking.
+#                MEASURED cost of turning it on (job 53587542): 5-12x tokens AND wall time,
+#                with no measurable answer improvement on two greedy prompts. Under GPU-time
+#                billing that is a 5-12x cost multiplier, so leaving it off is the right
+#                default. No MTP head in this checkpoint (verified on disk).
+# Serves TP=2 on all four tiers: H100 NVL, A100 80GB, A100 40GB, A40 (jobs 53544338,
+# 53544339, 53586878, 53586877). Tool calling verified with vLLM's gemma4 parser (53544725).
+# CAVEAT: no rate_table row yet -> floor billing, same as qwen3.8_27B on A100.
+PHASE1_SERVED = {"qwen2.5_72B", "qwen3_4b", "qwen3.8_27B", "gemma4_31B"}
 
 KNOWN_TIERS = ("h200", "h100", "l40s", "l40", "a100", "a40", "v100", "rtx6000")
 

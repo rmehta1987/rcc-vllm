@@ -204,8 +204,44 @@ chain of thought is returned separately from the answer — visible in opencode 
 |---|---|---|---:|---:|---:|
 | `qwen3_4b` (cheapest; debugging, simple edits, tool calling) | 4B | 1 x A100-80GB | 22167 | 5114 | 1.0 SU/h |
 | `qwen3.8_27B` (default; thinking model, accepts images) | 27.8B | 2 x A100 | — | — | 2.0 SU/h |
+| `gemma4_31B` (alternative; thinking off by default) | 30.7B | 2 x A40 | 2301 | 349 | 1.0 SU/h |
 | `qwen2.5_72B` | 72B | 4 x A100-80GB | 2914 | 1191 | 4.0 SU/h |
 
+
+### Choosing between the two coding models
+
+Both are Apache-2.0, both handle tool calling, both accept images. They differ in how they
+spend your GPU time.
+
+| | `qwen3.8_27B` (default) | `gemma4_31B` |
+|---|---|---|
+| size | 27.8B, 51.8 GiB | 30.7B, 58.3 GiB |
+| thinking | **on by default** (`reasoning_effort` low/medium/xhigh) | **off by default**, opt-in |
+| runs on | A100, H100 | A40, A100 |
+| cheapest floor | 2.0 SU/h (2 × A100) | **1.0 SU/h** (2 × A40) |
+| our code benchmark | 50.0% | **66.7%** |
+
+**Start with the default.** `qwen3.8_27B` is the `code` preset and reasons before answering,
+which suits hard problems.
+
+**Reach for `gemma4_31B`** when you want cheaper, faster turnaround. It scored higher on our
+own frozen coding benchmark and its A40 configuration is the least expensive way to run a
+capable coding model here. Note the benchmark ran with thinking disabled — Gemma's normal
+mode, but not Qwen's — so the gap flatters Gemma somewhat.
+
+```bash
+ai-session code --model gemma4_31B
+```
+
+Gemma can think if you ask it to, per request:
+
+```json
+{"chat_template_kwargs": {"enable_thinking": true}}
+```
+
+We measured what that costs: **5–12× the tokens and 5–12× the wall time**, with no
+improvement on the two problems we tried. Under GPU-time billing that is a 5–12× cost
+multiplier, so leave it off unless a problem genuinely needs it.
 
 !!! note "`qwen3.8_27B`: floor billing, and a word about thinking"
     The coding default has a measured rate for the H100 tier but not yet for A100, which

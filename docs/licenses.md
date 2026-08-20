@@ -19,6 +19,7 @@ after `module load ai-session`.
 | Model key | License | On-disk license file | What serving to others requires |
 |---|---|---|---|
 | `qwen3.8_27B` | Apache-2.0 | `<models>/Qwen3.8-27B/LICENSE` | Nothing beyond keeping the license and any `NOTICE` with redistributed weights. |
+| `gemma4_31B` | Apache-2.0 | `<models>/Gemma-4-31B-it/LICENSE` | Same as above. Note Gemma 4 is Apache-2.0 and ungated, unlike earlier Gemma releases. |
 | `qwen3_4b` | Apache-2.0 | `<models>/Qwen3-4B/LICENSE` | Same as above. |
 | `qwen2.5_0.5B` | Apache-2.0 | `<models>/Qwen2.5-0.5B-Instruct/LICENSE` | Same as above. |
 | `qwen2.5_72B` | Qwen (Tongyi) community license | `<models>/Qwen2.5-72B-Instruct/LICENSE` | Retain the Qwen attribution notice; observe the "Built with Qwen" and large-scale-use terms below. |

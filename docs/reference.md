@@ -81,6 +81,7 @@ directory.
 |---|---|---|---|
 | `qwen2.5_72B` | Qwen2.5-72B-Instruct | Yes (`chat` preset) | Qwen (Tongyi) community license |
 | `qwen3.8_27B` | Qwen3.8-27B | Yes (`code` preset, default); thinking model with `reasoning_effort` low/medium/xhigh; accepts images; A100 TP=2 (H100 also works, via `CONSTRAINT=H100`) | Apache-2.0 |
+| `gemma4_31B` | Gemma-4-31B-it | Yes (`code --model gemma4_31B`); second coding option; thinking OFF by default, opt-in; accepts images; A40 or A100, TP=2 | Apache-2.0 |
 | `qwen3_4b` | Qwen3-4B | Yes (`fast` preset; also `code --model qwen3_4b` for cheap coding) | Apache-2.0 |
 | `qwen3.5_122B` | Qwen3.5-122B-A10B (FP8) | **Requires H100 or H200** (FP8 will not run on Ampere) — see [Which GPUs each model needs](#which-gpus-each-model-needs). Validated at TP=2 on both Hopper tiers; awaiting a billing rate before it joins the served set | Apache-2.0 |
 | `qwen2.5_0.5B` | Qwen2.5-0.5B-Instruct | RCC staff only (smoke tests) | Apache-2.0 |
@@ -133,6 +134,7 @@ sensible default so you do not have to. One model is different.
 | `qwen3.8_27B` | BF16 | any bf16 GPU | 2 × A100 | anyone with GPU access |
 | `qwen2.5_72B` | BF16 | any bf16 GPU | 4 × A100 | anyone with GPU access |
 | `qwen3_4b` | BF16 | any bf16 GPU | 1 × A100 | anyone with GPU access |
+| `gemma4_31B` | BF16 | any bf16 GPU | 2 × A40 or A100 | anyone with GPU access |
 | `qwen3.5_122B` | **FP8** | **H100 or H200 only** | 2 × Hopper GPUs | **only users with H100/H200 access** |
 
 `qwen3.5_122B` ships with native FP8 weights, and FP8 arithmetic needs Hopper-generation

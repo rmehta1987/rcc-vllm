@@ -81,6 +81,7 @@ if [ -z "${READY_TIMEOUT:-}" ]; then
     qwen3.5_122B)                 READY_TIMEOUT=2400 ;;  # 122B MoE on H200
     qwen2.5_72B)                  READY_TIMEOUT=1500 ;;  # 72B dense, ~15min cold start
     qwen3.8_27B)                  READY_TIMEOUT=1800 ;;  # 27B hybrid GDN: Triton JIT warmup is slow
+    gemma4_31B)                   READY_TIMEOUT=1800 ;;  # 30.7B: ~130s load + engine init, cold JIT on a new arch
     *)                            READY_TIMEOUT=900  ;;   # small (4b/0.5B)
   esac
 fi

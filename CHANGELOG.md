@@ -2,6 +2,59 @@
 
 ## Unreleased — model-refresh (branch milestone/model-refresh)
 
+### Gemma-4-31B-it added as a SECOND coding option (2026-08-20)
+
+Not a replacement. `qwen3.8_27B` remains the `code` preset default; Gemma is reached with
+`ai-session code --model gemma4_31B`. Four models served.
+
+**Why it is not the default despite scoring higher.** Gemma took Gate-2 at 66.67% (40/60)
+against the 27B's 50.00% on the identical frozen LCB-60 subset, decode and harness — but the
+frozen decode pins `enable_thinking:false`, which is Gemma's NATIVE default and a suppression
+of Qwen3.8's `xhigh` default. The 27B's 50.00% is therefore a lower bound and the 16.67-point
+gap is not like-for-like. A thinking-on Qwen rerun is owed before any swap is justified.
+
+**Wiring.** `gemma4_31B` in `MODEL_REGISTRY` + `PHASE1_SERVED`; TP=2; tool parser `gemma4`;
+reasoning parser `gemma4`; serving env routed to `vllm-serve-cu129` (0.10.2 predates Gemma 4
+entirely); `READY_TIMEOUT` 1800.
+
+**Tier pin is `"a40|a100"` — lowercase deliberately.** Uppercase `A100` is midway3's 80GB
+cards, which sit in PI-owned partitions; per the node-ownership rule in CLAUDE.md those must
+not be a default target. Lowercase `a40`/`a100` are beagle3 consortium hardware, 22 nodes each,
+owned by nobody and reachable by ordinary users.
+
+**A40 is both the cheaper AND the roomier tier for this model** — the reverse of the usual
+ordering, because Gemma is heavy (58.25 GiB, 30.38 GiB/GPU at TP=2) and an A40 card (46 GiB)
+is larger than a 40GB A100. MEASURED KV headroom at TP=2:
+  a40  (46 GiB)  9.17 GiB KV = 51,325 tokens, 3.13x concurrency @16K, tier weight 0.5
+  a100 (40 GiB)  4.71 GiB KV = 26,342 tokens, 1.61x concurrency @16K, tier weight 1.0
+The a100 figure is tight: 1.61x means barely more than one full-context request at a time.
+
+**Rate row measured on a40** (job 53710675): prefill 2301.17, decode 348.67, alpha 6.60,
+su_per_1k_out 0.000797. Decode is modest — A40 is slow silicon, running eager, with limited
+batching — but the COST is the best in the fleet: ~36% cheaper per output token than
+`qwen3.8_27B` on h100 (0.000797 vs 0.001242) despite decoding 2.6x slower, because the tier
+weight is 0.5 against 2.0. Floor is 1.0 SU/h vs 4.0. An a100 row is still measuring.
+
+**Thinking measured, not assumed** (job 53587542, new `tools/thinking_probe.{py,sbatch}`).
+The `gemma4` reasoning parser correctly separates the chain of thought into `reasoning`,
+leaving the answer alone in `content` — verified, not inferred; a broken parser would have
+silently contaminated every downstream score. Cost of enabling thinking: **10.4x tokens and
+11.8x wall time on an easy prompt, 5.1x/5.3x on a hard one**, with content length essentially
+unchanged (618 vs 616 chars on the hard prompt). Thinking spends roughly constant absolute
+effort regardless of difficulty, so the multiplier is worst on trivial requests -- the same
+pathology as Qwen's `xhigh`, though far smaller in absolute terms. Under GPU-time billing
+that is a 5-12x cost multiplier, so off-by-default is correct and the launcher now prints
+the measured cost when a user starts the model.
+
+**Hardware coverage complete for both coding models.** Gemma passes TP=2 on H100 NVL, A100
+80GB, A100 40GB and A40 (jobs 53544338, 53544339, 53586878, 53586877); Qwen3.8-27B passes the
+same four. Neither is restricted to hardware ordinary users cannot reach.
+
+Docs: both coding models in the model/hardware/licence tables, plus a "Choosing between the
+two coding models" section giving the honest trade — Qwen thinks by default and suits hard
+problems; Gemma is cheaper and faster by default and scored higher on our benchmark, with the
+comparison caveat stated.
+
 ### Fleet consolidation, hardware coverage, and a new measured leader (2026-08-19, later)
 
 Follow-on to the coding cutover earlier the same day. Everything below is MEASURED.

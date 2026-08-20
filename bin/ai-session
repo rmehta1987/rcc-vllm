@@ -91,6 +91,7 @@ tp_for_model() {
     qwen2.5_72B|llama3.1_70B)              echo 4 ;;
     qwen3.5_122B)                          echo 2 ;;  # FP8 MoE fits TP=2 on 2xH200 (measured, job 53069683)
     qwen3.8_27B)                           echo 2 ;;  # 27.8B BF16 (~51.8GiB) fits TP=2 on 2xH100 (measured, jobs 53533204/53534097)
+    gemma4_31B)                            echo 2 ;;  # 30.7B BF16 (58.25GiB) = 30.38GiB/GPU at TP=2; fits every tier (measured 53544338/53544339/53586877/53586878)
     qwen3_4b|qwen2.5_0.5B)                 echo 1 ;;
     *) echo "" ;;
   esac
@@ -126,6 +127,17 @@ constraint_for_model() {
     # bills the reservation floor until an a100 row is measured. That floor (2.0 SU/h)
     # is still HALF the H100 floor, so this is a net saving for users either way.
     qwen3.8_27B) echo "A100|a100" ;;
+    # gemma4_31B: lowercase features ONLY, on purpose. Uppercase A100 is midway3's 80GB
+    # cards, which sit in PI-owned partitions (gagalli-gpu, schmidt-gpu) -- CLAUDE.md says
+    # do not target those by default. Lowercase a100/a40 are beagle3 consortium hardware,
+    # owned by nobody, 22 nodes each, and reachable by ordinary users.
+    # MEASURED KV headroom at TP=2 (30.38 GiB weights/GPU):
+    #   a40  (46 GiB)  9.17 GiB KV = 51,325 tokens, 3.13x concurrency @16K  -- tier weight 0.5
+    #   a100 (40 GiB)  4.71 GiB KV = 26,342 tokens, 1.61x concurrency @16K  -- tier weight 1.0
+    # Note the inversion: A40 is BOTH cheaper and roomier for this model, because Gemma is
+    # heavy (58.25 GiB) and the A40 card is larger than a 40GB A100. Users with H100/A100-80GB
+    # access can still override with CONSTRAINT=H100 etc.
+    gemma4_31B) echo "a40|a100" ;;
     *) echo "" ;;
   esac
 }

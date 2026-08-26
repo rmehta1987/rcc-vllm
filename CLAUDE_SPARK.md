@@ -392,31 +392,6 @@ to breach the boundary above, and nothing in sparkrun will warn you.
 
 ---
 
-### 7.1 Clients
-
-Clients read three variables from `~/.ai-session/env`, mode 600 — `AISESSION_BASE_URL`,
-`AISESSION_API_KEY`, `AISESSION_MODEL` — so no client config contains a path, a hostname, or a
-key. `AISESSION_MODEL` must match the recipe's `served_model_name`, which is where the served
-name is actually set.
-
-- **aider** needs a litellm metadata entry per served model or it mis-sizes prompts, with keys
-  duplicated with and without the `openai/` prefix. Costs are zero.
-- **opencode** needs a project-local provider block using `@ai-sdk/openai-compatible` and
-  `{env:AISESSION_BASE_URL}` / `{env:AISESSION_API_KEY}`.
-- **Continue** needs an OpenAI-compatible provider with `apiBase` pointing at the gateway.
-- **All three must declare the same context and output budget**, generated from §4.2.
-- A reasoning parser puts chain-of-thought in `reasoning`, not `content`. With a tight
-  `max_tokens`, `content` can return null while the model is still thinking — that is not a
-  broken API.
-- **Telemetry off by name**: aider `--analytics-disable`; Continue
-  `allowAnonymousTelemetry: false`; opencode `share: disabled` and `autoupdate: false`; Open
-  WebUI `ANONYMIZED_TELEMETRY=False`, `DO_NOT_TRACK`, `SCARF_NO_ANALYTICS`. The coding tool is
-  separate software with its own telemetry, outside this service's control.
-- Open WebUI's web search, URL fetch and paper search are **opt-in, default off** — their
-  queries leave the machine. Everything else on the serving path does not.
-
----
-
 ## 8. Inference as a tool
 
 Offline batch (`LLM()`, no server), guided/structured decoding, and an embeddings endpoint are
@@ -452,13 +427,4 @@ and `HF_HUB_DOWNLOAD_TIMEOUT=60`, retry with a bound, then **verify byte-exactly
 safetensors header-length prefix, sum `filesize − 8 − header` across shards, and compare with
 the index's `metadata.total_size`. A partial download that looks complete is what this catches.
 
----
 
-## 10. Related
-
-**`AGENTS.md` must not exist in this repo.** Where you have seen it, it is not a rules file — it
-is a prompt-level workaround forcing `<tool_call>` tokens out of a model that could not emit
-them. All three models here have working tool parsers, and that file actively degrades them.
-
-User-facing documentation lives in `docs/`. This file is project rules for work *on* this repo
-and is not user documentation.

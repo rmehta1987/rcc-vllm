@@ -292,7 +292,7 @@ Each cost the source project a debugging cycle or a wasted allocation. State the
 | The `hermes` tool-call parser fails **silently** on models it does not fit; the launcher routes both parsers by model key | keep per-model parser routing in the registry (A6, A8). Silent tool-call failure is the most expensive bug in this stack because it presents as the model being stupid |
 | Gemma's thinking cost 5–12× tokens and wall time with no measurable answer improvement — on two greedy prompts (job 53587542) | on a bandwidth-bound box that is a 5–12× latency multiplier. Set thinking per model, per the registry (A8) — **not** a blanket default, since the three models differ. Record the multiplier and the n=2 caveat together |
 | `--enforce-eager` was adopted as a crash workaround, then removed: CUDA graphs plus a compilation-config flag recovered 894.7 → 3492.7 tok/s decode, ~3.9× (job 53729212) | never leave `--enforce-eager` as a permanent default; record it as a workaround with the condition for removing it. The specific crash cannot occur here — the failing pass only enables at TP>1 (A8) |
-| An MTP draft head worth +53 % decode sat unused | speculative decoding trades spare compute for bandwidth, which is exactly this box's imbalance. **This is a headline lever on the Spark**, and the default model ships a purpose-built draft (A8). Carry the caveats with the number |
+| An MTP draft head worth +53 % decode sat unused | speculative decoding trades spare compute for bandwidth, which is exactly this box's imbalance. **This is a headline lever on the Spark** — measured at 2.3x on the default model (A8), which ships an MTP head; the fast alternative ships two purpose-built drafts. Carry the caveats with the number |
 | Slurm reported 2 GPUs while the cgroup exposed 1; vLLM died after the allocation was spent (job 53539505) | write a preflight that asserts actual free unified memory before loading weights and fails with a legible message instead of OOMing the box |
 | Two models' scores were compared under conditions that suited one model's defaults and suppressed the other's | whenever two numbers appear together, the conditions they were measured under appear too. Carry this as a documentation rule |
 | A serve attempt OOM'd during **multimodal profiling** even though the language weights fit; `--language-model-only` fixed it (jobs 53738460 → 53742254) | a vision tower profiles at startup and can OOM on a memory-tight unified box. **Both reference models are multimodal** (A8), so this applies to both. Record the flag next to any multimodal checkpoint, and note that skipping the tower also drops it from the resident footprint |
@@ -353,24 +353,31 @@ why*, not source to copy. The cost worth naming in `CLAUDE.md`: each rewrite is 
 lose a fix that survives only as a comment here. Work through A1's environment list and A6's
 parser routing deliberately rather than rediscovering them.
 
-**5. Three models: one default, two references.** Full detail in A8.
+**5. Three models: a default, a fast alternative, and a second coding option.** Detail in A8.
 
-- **Default: `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4`**, with its `DSpark` draft model for
-  speculative decoding. Chosen because it is the only candidate with a published, official
-  single-DGX-Spark vLLM recipe, and because its architecture matches what this box is short of:
-  30B total but **3B active**, so it reads roughly a tenth of a comparable dense model per
-  token. It serves chat, coding, and batch inference.
-- **References: `qwen3.8_27B` and `gemma4_31B`.** These are the two models whose coding quality
-  this project actually measured on a frozen 60-problem subset (50.00 % and 66.67 %). Keep them
-  registered: they cost nothing to retain, and they are the only yardstick you have for judging
-  whether the default is good enough at coding. The default's quality on that subset is
-  **unknown** — measuring it is the first real experiment on the box.
-- Both references are **dense**, so for them quantization is mandatory, not preferred (§5b).
-  Their BF16 checkpoints are on the wrong side of the bandwidth arithmetic; A8 lists the
-  quantized checkpoints and their ceilings.
-- Registry status: the default is served; the references are served only if their quantized
-  checkpoints clear the ceiling test; BF16 checkpoints of either are registered-but-not-served
-  with the arithmetic as the recorded reason.
+- **Default: `qwen3.8_27B`, served from `unsloth/Qwen3.8-27B-NVFP4`** (23.4 GB). This is the
+  checkpoint the field report in A8 measured at 11.5 tok/s, and its computed ceiling of
+  11.7 matches to within 1 %. It carries a measured coding score (50.00 % on the frozen
+  LCB-60), native vision, 262K context, Apache-2.0, and day-zero vLLM support. It serves chat,
+  coding, and batch inference.
+- **Fast alternative: `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4`** with its `DSpark` draft
+  (21.6 + 1.3 GB). Reach for it when throughput matters more than capability: 3B active
+  parameters against the default's 27.8B dense, so it reads roughly a tenth per token, and it
+  is the only model here with a published official single-DGX-Spark vLLM recipe. Its coding
+  quality on the frozen LCB-60 is **unmeasured** — that measurement is what would justify
+  promoting it, and it is a good first experiment on the box.
+- **Second coding option: `gemma4_31B`**, from `google/gemma-4-31B-it-qat-w4a16-ct` (23.3 GB).
+  It scored **higher** than the default on the frozen subset — 66.67 % vs 50.00 % — and that
+  is not a reason to make it the default, for the reason recorded in A8: the comparison ran
+  with thinking disabled, which is Gemma's native default but suppresses the Qwen model's, so
+  50.00 % is a lower bound. The source project reached the same conclusion on the same
+  evidence and kept Qwen as its coding default with Gemma reachable by name. Do the same.
+- **BF16 checkpoints of either dense model are registered but not served.** At 55.6 and
+  62.5 GB they read the whole checkpoint per token for a 4.4–4.9 tok/s ceiling; the 4-bit
+  checkpoints measure 11.5 for a fraction of the memory. Record the arithmetic as the reason.
+- **Serving all three at once is not the plan** — one resident model at a time (§6.8). All
+  three quantized checkpoints together are about 68 GB, so they co-reside on disk comfortably
+  and the swap is a load-time cost, not a re-download.
 
 ---
 
@@ -596,11 +603,11 @@ Hub ids, sizes pulled from the Hub file listing, ceilings derived at the assumed
 
 | checkpoint | Hub id | weights | read/token | ceiling |
 |---|---|---:|---:|---:|
-| **Nemotron Lightning NVFP4** *(default)* | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` | 21.6 GB | ~1.7 GB (3B active) | high — see note |
+| **Nemotron Lightning NVFP4** *(fast alternative)* | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` | 21.6 GB | ~1.7 GB (3B active) | high — see note |
 | **DSpark draft** | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark` | 1.3 GB | 967M params | draft only |
 | Qwen3.8-27B BF16 | `Qwen/Qwen3.8-27B` | 55.6 GB | 55.6 GB | 4.9 tok/s |
 | Qwen3.8-27B FP8 | `Qwen/Qwen3.8-27B-FP8` | 30.9 GB | 30.9 GB | 8.8 tok/s |
-| Qwen3.8-27B NVFP4 | `unsloth/Qwen3.8-27B-NVFP4` | 23.4 GB | 23.4 GB | 11.7 tok/s |
+| **Qwen3.8-27B NVFP4** *(default)* | `unsloth/Qwen3.8-27B-NVFP4` | 23.4 GB | 23.4 GB | 11.7 tok/s — **measured 11.5** |
 | Qwen3.8-27B NVFP4 | `RadixArk/Qwen3.8-27B-NVFP4` | 21.9 GB | 21.9 GB | 12.5 tok/s |
 | Gemma-4-31B-it BF16 | `google/gemma-4-31B-it` | 62.5 GB | 62.5 GB | 4.4 tok/s |
 | Gemma-4-31B-it QAT 4-bit | `google/gemma-4-31B-it-qat-w4a16-ct` | 23.3 GB | 23.3 GB | 11.7 tok/s |
@@ -626,13 +633,13 @@ Three risks travel with it, and none is resolvable from a model card:
 - Its evaluation ran with an **uncalibrated FP8 KV cache** (`scales_calibrated: false`,
   defaulting every scale to 1.0, with the engine's own accuracy warning). Its 97.27 % was
   measured under that condition — and NVIDIA's Spark recipe also sets `--kv-cache-dtype fp8`,
-  so the same uncalibrated-scale question applies to the default model.
+  so the same uncalibrated-scale question applies to any model served with an fp8 KV cache.
 
 GSM8K is also not coding. A quantization that holds arithmetic can still lose the long-context
 code editing this box is for. It is the best-evidenced third-party option, not a proven one.
 
-Note on the default's ceiling: only the active experts are read per token, so the naive
-weights/bandwidth figure does not apply — but router, attention and shared layers add to the
+Note on the fast alternative's ceiling: only the active experts are read per token, so the
+naive weights/bandwidth figure does not apply — but router, attention and shared layers add to the
 1.7 GB, and the Mamba state has its own traffic. Compute a range rather than a point, mark it
 derived, and make measuring it the first install-time task. Note also that the two Qwen NVFP4
 checkpoints are **third-party**; the FP8 is first-party. Quantization quality is a measurement,
@@ -683,8 +690,10 @@ Concurrency behaves as the batching argument predicts: aggregate rises to 84.3 t
 concurrent while per-user falls only from 11.5 to ~8.4. At three users (§9.1) the per-user
 cost of sharing is small. Do not plan as if decode rate divides by the user count.
 
-Two things this report does **not** settle: which NVFP4 checkpoint was used (this document
-lists two, and they differ by 1.5 GB), and the model's coding quality on the frozen LCB-60.
+The checkpoint measured was **`unsloth/Qwen3.8-27B-NVFP4`**, which is why it is the default
+(§9.5). What the report does not settle is this model's coding quality on the frozen LCB-60 —
+the cluster's 50.00 % was measured on the BF16 weights, and quantization is the one thing that
+can silently destroy a coding score. Re-scoring the 4-bit checkpoint is the owed measurement.
 
 **Per-model serve facts:**
 
@@ -715,14 +724,15 @@ lists two, and they differ by 1.5 GB), and the model's coding quality on the fro
   a property of the models.
 - Both reference models were only ever served **TP=2** across two cards ranging 40–141 GB.
   Single-device residency for either BF16 checkpoint is unproven. The one single-card datapoint
-  on record is the Gemma QAT 4-bit checkpoint on a 48 GB A40. The default model, by contrast, is
-  published as a single-GB10 deployment.
+  on record is the Gemma QAT 4-bit checkpoint on a 48 GB A40 — and the field report (A8), which
+  measured the default's 4-bit checkpoint serving on one GB10. The fast alternative is published
+  as a single-GB10 deployment.
 - Qwen3.8-27B loads as `Qwen3_5ForConditionalGeneration`, an architecture vLLM 0.10.2 does not
   have; the cluster needed 0.26.0. Field report (A8): the class was pre-supported at release,
   so llama.cpp and vLLM both served this model on day zero. NVIDIA's Spark recipe names the image `vllm/vllm-openai:v0.27.1`. Pin at least that, and
   confirm it carries kernels for this GPU.
 
-**NVIDIA's published single-Spark recipe for the default model** — the closest thing to a
+**NVIDIA's published single-Spark recipe for the fast alternative** — the closest thing to a
 validated starting configuration anyone has:
 
 ```

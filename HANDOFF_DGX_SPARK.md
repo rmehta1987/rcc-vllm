@@ -222,6 +222,10 @@ An earlier draft of this document got this backwards in both directions. The cor
   are different things, and which kernels exist is a property of the pinned vLLM build. Record
   a per-format table — NVFP4, FP8, compressed-tensors w4a16 — each row marked `UNVERIFIED`
   with the command that settles it at install time.
+- The sharpest case of that distinction is on the table already: one candidate checkpoint (A8)
+  is a **W4A4** recipe validated on GB300, while GB10's published path is **W4A16**. Four-bit
+  weights are not the question; four-bit *activations* are. Make the per-format table record
+  the activation precision, not just the weight precision.
 - **aarch64** is the other half of this: packages needing compiled extensions may have no Arm
   wheel, which is the main argument for a container-first install.
 
@@ -287,7 +291,7 @@ Each cost the source project a debugging cycle or a wasted allocation. State the
 | An MTP draft head worth +53 % decode sat unused | speculative decoding trades spare compute for bandwidth, which is exactly this box's imbalance. **This is a headline lever on the Spark**, and the default model ships a purpose-built draft (A8). Carry the caveats with the number |
 | Slurm reported 2 GPUs while the cgroup exposed 1; vLLM died after the allocation was spent (job 53539505) | write a preflight that asserts actual free unified memory before loading weights and fails with a legible message instead of OOMing the box |
 | Two models' scores were compared under conditions that suited one model's defaults and suppressed the other's | whenever two numbers appear together, the conditions they were measured under appear too. Carry this as a documentation rule |
-| A serve attempt OOM'd during **multimodal profiling** even though the language weights fit; `--language-model-only` fixed it (jobs 53738460 → 53742254) | a vision tower profiles at startup and can OOM on a memory-tight unified box. Record the flag next to any multimodal checkpoint (A8) |
+| A serve attempt OOM'd during **multimodal profiling** even though the language weights fit; `--language-model-only` fixed it (jobs 53738460 → 53742254) | a vision tower profiles at startup and can OOM on a memory-tight unified box. **Both reference models are multimodal** (A8), so this applies to both. Record the flag next to any multimodal checkpoint, and note that skipping the tower also drops it from the resident footprint |
 
 ---
 
@@ -595,6 +599,32 @@ Hub ids, sizes pulled from the Hub file listing, ceilings derived at the assumed
 | Qwen3.8-27B FP8 | `Qwen/Qwen3.8-27B-FP8` | 30.9 GB | 30.9 GB | 8.8 tok/s |
 | Qwen3.8-27B NVFP4 | `unsloth/Qwen3.8-27B-NVFP4` | 23.4 GB | 23.4 GB | 11.7 tok/s |
 | Qwen3.8-27B NVFP4 | `RadixArk/Qwen3.8-27B-NVFP4` | 21.9 GB | 21.9 GB | 12.5 tok/s |
+
+The RadixArk checkpoint deserves a note, because it is the only third-party quantization here
+that publishes its own evidence — and it is the discipline §3 asks for, applied by someone
+else. Its `qualification.json` records an audit verdict of pass against declared gates, GSM8K
+97.27 % (1283/1319) with zero empty generations, truncations, request errors or OOM kills, a
+measured **MTP acceptance length of 2.775** (acceptance rate 0.59), and SHA-256 hashes for the
+eval log, predictions, tensor audit and server log. The MTP head is deliberately left
+unquantized (`ignore: ['mtp*']`), so the draft head survives — which is the §7 speculative-
+decoding lever, already measured on this checkpoint.
+
+Three risks travel with it, and none is resolvable from a model card:
+
+- It is a **W4A4** recipe, produced and validated on **GB300**. NVIDIA's own matrix puts GB10
+  on a **W4A16** compute path via Marlin (§5c). A checkpoint expecting 4-bit activations on a
+  box whose validated path is 16-bit activations is precisely the format-versus-compute-path
+  mismatch §5c tells you to verify before pinning.
+- Its card names **SGLang** as the supported runtime and links an SGLang cookbook. It does not
+  claim vLLM support. `modelopt` checkpoints generally load in vLLM, but "generally" is not
+  evidence.
+- Its evaluation ran with an **uncalibrated FP8 KV cache** (`scales_calibrated: false`,
+  defaulting every scale to 1.0, with the engine's own accuracy warning). Its 97.27 % was
+  measured under that condition — and NVIDIA's Spark recipe also sets `--kv-cache-dtype fp8`,
+  so the same uncalibrated-scale question applies to the default model.
+
+GSM8K is also not coding. A quantization that holds arithmetic can still lose the long-context
+code editing this box is for. It is the best-evidenced third-party option, not a proven one.
 | Gemma-4-31B-it BF16 | `google/gemma-4-31B-it` | 63.4 GB | 63.4 GB | 4.3 tok/s |
 | Gemma-4-31B-it QAT 4-bit | `google/gemma-4-31B-it-qat-w4a16-ct` | 23.6 GB | 23.6 GB | 11.6 tok/s |
 
@@ -603,18 +633,19 @@ weights/bandwidth figure does not apply — but router, attention and shared lay
 1.7 GB, and the Mamba state has its own traffic. Compute a range rather than a point, mark it
 derived, and make measuring it the first install-time task. Note also that the two Qwen NVFP4
 checkpoints are **third-party**; the FP8 is first-party. Quantization quality is a measurement,
-not an assumption — that is the whole discipline in §3.
+not an assumption — that is the whole discipline in §3. See the RadixArk note above for what
+good third-party evidence looks like, and what it still does not cover.
 
 **Per-model serve facts:**
 
 | | Nemotron Lightning | `qwen3.8_27B` | `gemma4_31B` |
 |---|---|---|---|
-| architecture | hybrid Mamba-2 + MoE, 30B total / **3B active**, 1M context | dense 27.8B, hybrid Gated DeltaNet + attention | dense 30.7B, **multimodal prefix-LM** (vision tower) |
+| architecture | hybrid Mamba-2 + MoE, 30B total / **3B active**, 1M context | dense 27.8B, hybrid Gated DeltaNet + attention, **multimodal** (vision tower, 262144 native context) | dense 30.7B, **multimodal prefix-LM** (vision tower) |
 | `--reasoning-parser` | `nemotron_v3` | `qwen3` | `gemma4` |
 | `--tool-call-parser` | `qwen3_coder` | `qwen3_coder` — **`hermes` fails silently** | `gemma4` |
 | thinking | reasoning model | **ON** by default (`reasoning_effort` xhigh) | OFF by default — **but the template turns it on whenever tools or a system message are present, i.e. exactly in coding sessions**. Measured cost when on: 5–12× tokens and wall time, no measurable gain on two greedy prompts |
 | speculative decoding | **DSpark draft, plus MTP and DFlash heads** | ships an MTP head, +53 % decode measured — see caveats | none in this checkpoint |
-| known trap | — | — | first single-GPU attempt **OOM'd during multimodal profiling**; `--language-model-only` fixed it |
+| known trap | — | **also multimodal** — the same profiling OOM risk applies; its config carries a `language_model_only` key | first single-GPU attempt **OOM'd during multimodal profiling**; `--language-model-only` fixed it |
 | frozen LCB-60 | **unmeasured** | 50.00 % (30/60) | **66.67 %** (40/60); hard subset 14/30 vs 6/30 |
 | licence | OpenMDW-1.1 | check the shipped `LICENSE` | check the shipped `LICENSE` |
 

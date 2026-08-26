@@ -137,33 +137,8 @@ a run id (§9).
 | `nemotron_30b_a3b` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` | 21.6 GB | range (§1.3) | served — fast alt; **coding quality unmeasured**, which is what would justify promoting it |
 | — draft | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark` | 1.3 GB | — | draft for the above |
 | `gemma4_31B` | `google/gemma-4-31B-it-qat-w4a16-ct` | 23.3 GB | 11.7 | served — second coding option |
-| `qwen3.8_27B_bf16` | `Qwen/Qwen3.8-27B` | 55.6 GB | 4.9 | **not served** — §1.4 |
-| `gemma4_31B_bf16` | `google/gemma-4-31B-it` | 62.5 GB | 4.4 | **not served** — §1.4 |
-
-Not registered, with reasons: `Qwen/Qwen3.8-27B-FP8` (30.9 GB → 8.8 ceiling) **wedged under
-concurrent deep-context load** where NVFP4 did not — do not serve until re-tested on the pinned
-build. `RadixArk/Qwen3.8-27B-NVFP4` (21.9 GB → 12.5 ceiling) publishes real evidence (GSM8K
-97.27 %, which is not coding) but is a **W4A4** recipe validated on GB300 against this box's W4A16 path (§3.2), its
-card names SGLang rather than vLLM, and its evaluation ran with an uncalibrated FP8 KV cache.
-It is the first fallback if the default disappoints, not a free upgrade. It is also the source
-of the only speculative-decoding acceptance data on record (length 2.775, rate 0.59) — measured
-on *that* checkpoint under SGLang, so it does not transfer to ours.
-
-**Quality scores belong to the BF16 parents, not to what we serve.** On a frozen 60-problem
-LiveCodeBench subset, elsewhere, at TP=2: `Qwen/Qwen3.8-27B` 50.00 %,
-`google/gemma-4-31B-it` 66.67 %. **Not
-like-for-like** — that run disabled thinking, which is Gemma's native default but suppresses
-Qwen's, so 50.00 % is a lower bound and the gap an upper bound. Gemma is therefore the second
-option, not the default. **Both served checkpoints are unscored: quantization is the one thing
-that silently destroys a coding score, and re-scoring them is owed work.**
 
 ### 3.2 Quantization on this GPU
-
-A historical NVFP4 NO-GO recorded elsewhere was `cudaErrorUnsupportedPtxVersion` on an EOL
-driver, **not** a silicon limit — it does not apply here, and NVFP4 is the format we serve.
-GB10 stores NVFP4 but computes **W4A16 via Marlin** — there is no native FP4 tensor-core path
-here (GB200 has one). **Marlin is load-bearing, not legacy**; do not steer away from it.
-Stored precision ≠ compute path, and weight precision ≠ **activation** precision.
 
 | format | weights | activations | status |
 |---|---|---|---|
@@ -228,14 +203,6 @@ picked independently.
 A vision tower profiles at startup and can OOM **even when the language weights fit** — this
 has happened. **First serve runs `--language-model-only`.** Enabling vision is a separate step,
 gated on measured headroom against §1.1, and the registry records which mode is live.
-
-### 4.3.1 The vendor recipe binds the wrong interface
-
-NVIDIA publishes a single-DGX-Spark recipe for the fast alternative — the only officially
-validated configuration for any model here, and the source of its extra flags above. **It omits
-`--host`, so vLLM binds `0.0.0.0`**, which §6 forbids. It also sets `--gpu-memory-utilization
-0.85`, calibrated for that model on an idle box, and `--kv-cache-dtype fp8`, whose scale
-calibration is the same open question noted for RadixArk. Take its flags; never run it verbatim.
 
 ### 4.4 Prefix caching — always on
 

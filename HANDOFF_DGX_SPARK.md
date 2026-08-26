@@ -120,7 +120,7 @@ Seven ideas. Carry the ideas; do not copy implementations (§9.4).
 | **Registry with a served/not-served split** | keys are stable identifiers used in job names, rate tables, logs; the gap records *why* a model is not servable | same split, keyed on what fits the memory budget and clears a usable decode ceiling. A model that fits but decodes too slowly is a NO-GO, recorded with its number |
 | **Stable URL over a moving backend** | the vLLM endpoint changed node and port every session | the endpoint stops moving but the **resident model** does. The gateway keeps its value as the seam for model swaps, usage capture, and the access key |
 | **Presets, not knobs** | users pick intent, not tensor parallelism | keep the principle, not the preset list. Parallelism disappears entirely (TP=1); memory budget and quantization are the remaining knobs and both are more dangerous than TP was |
-| **One session at a time, and something that reclaims it** | idle GPUs were billed | nothing is billed, but memory and bandwidth are shared. One resident model, an idle unload, and a swap lock (§6.8) |
+| **One session at a time, and something that reclaims it** | idle GPUs were billed | nothing is billed, but memory and bandwidth are shared. One resident model, an idle unload, and a swap lock (§6.9) |
 | **Model choice is a measurement** | every coding candidate scored on a frozen 60-problem LiveCodeBench subset, identical harness and decode, verdicts recorded with job IDs and pass@1 deltas | keep the discipline. The Spark adds a second axis: a verdict is now a pair, (quality, decode rate). Quality scores carry as priors; **decode rates do not transfer at all** |
 | **Nothing leaves the machine** | the service exists so unpublished code and data never reach a commercial provider; external tools are opt-in and off by default; client telemetry disabled by name | carry the posture verbatim, including the per-client telemetry list (A6) and the honesty about the opt-in exceptions |
 | **Evidence outlives the weights** | measured results live in a gitignored dir and are the only copy | same rule, sharper: commit evidence out of the gitignored directory before deleting weights it describes. A 4 TB NVMe fills faster than a project filesystem |
@@ -252,28 +252,41 @@ Each is a hard rule with its reason, in the style of the source file's hardware 
    the driver cannot run.
 4. **Quantization policy**, with §5c's per-format table and the corrected Marlin story. No
    claim about native FP4 without evidence from this box.
-5. **Bench and smoke fences.** The source's fences exist so a test run cannot be mistaken for
+5. **Prefix caching on, always.** `--enable-prefix-caching` was set on every serve path in
+   the source project — production launcher, benchmark harness, and all four probe scripts,
+   including the hybrid-architecture default — so it is proven compatible, not speculative. It
+   matters more here than it did there. Measured prefill is ~4,000 tok/s (A8), so a 32K prompt
+   costs ~8 s and a 100K prompt ~25 s *per turn*. Decode barely degrades with context
+   (11.5 → 9.8 tok/s across 100K) but prefill does not get cheaper, and a coding agent resends
+   a growing, mostly-identical prompt every turn. Prefix caching turns that repeated prefill
+   into a lookup, which is where the wall clock goes on long-context work.
+   Two things to write down with it: **cached blocks live in the same KV memory §6.1 budgets**,
+   so cache size trades against context length and against headroom on a 128 GB shared pool —
+   set it explicitly rather than taking a default; and **vLLM reports full `prompt_tokens`
+   regardless of cache hits** (source project's billing policy), so the per-user usage logs
+   (§9.1) overstate real prefill work and cannot be read as capacity on their own.
+6. **Bench and smoke fences.** The source's fences exist so a test run cannot be mistaken for
    production by discovery or billing. There is no billing here, but the hazards — a benchmark
    being picked up as the live backend, or evicting the resident model mid-conversation — are
    real. Define a distinct port range and a `bench-` served-name prefix the gateway refuses to
    route to.
-6. **Evidence rule** (§3): name the gitignored directory and an append-only JSONL manifest of
+7. **Evidence rule** (§3): name the gitignored directory and an append-only JSONL manifest of
    scored runs; commit evidence out before deleting the weights it describes.
-7. **Thermal and power honesty.** A desk box under sustained load throttles. If sustained
+8. **Thermal and power honesty.** A desk box under sustained load throttles. If sustained
    throughput differs from burst, users need both numbers.
-8. **One resident model; swapping takes a lock.** The reason is *not* that they cannot
+9. **One resident model; swapping takes a lock.** The reason is *not* that they cannot
    co-reside — at 4-bit all three models in A8 fit in 128 GB together. The reasons are that KV
    cache is what makes a long context usable and it wants the leftover memory, and that a
    second model serving concurrently competes for the same scarce bandwidth. With three users
    a swap affects other people: it requires no in-flight requests, takes an explicit lock, and
    is visible. The CLI must answer "what is resident, and who is using it".
-9. **Users and access.** Three users; every listener bound to `127.0.0.1`; browser access over
+10. **Users and access.** Three users; every listener bound to `127.0.0.1`; browser access over
    SSH tunnel only; authenticated Open WebUI. Put the tunnel command in `CLAUDE.md` (user docs
    inherit it later). No LAN bind, no TLS, no auth proxy — the tunnel is the security boundary.
-10. **Privacy posture.** Nothing leaves the box on the serving path; external tools opt-in and
+11. **Privacy posture.** Nothing leaves the box on the serving path; external tools opt-in and
     off by default; client telemetry disabled by name per client (A6). This is the reason the
     service exists and it needs a rule, not just a sentence.
-11. **After any agent, subagent, or background run, check for orphaned processes.** The source
+12. **After any agent, subagent, or background run, check for orphaned processes.** The source
     rule is `squeue -u $USER`; here it is stray `vllm serve` processes and containers holding
     unified memory. On one box that blocks everyone.
 
@@ -328,7 +341,7 @@ Constraints, not defaults. Each belongs in `CLAUDE.md` as a rule with its conseq
 
 **1. Three users, internal testing.** Consequences:
 
-- One resident model and three people means the box serializes; see §6.8 for the swap lock.
+- One resident model and three people means the box serializes; see §6.9 for the swap lock.
 - **Per-user decode does not divide by the user count.** Measured on a Spark (A8): ten
   concurrent streams gave 84.3 tok/s aggregate while per-user fell only from 11.5 to ~8.4.
   Three users will cost less than that. Record the measured numbers rather than a model.
@@ -375,7 +388,7 @@ parser routing deliberately rather than rediscovering them.
 - **BF16 checkpoints of either dense model are registered but not served.** At 55.6 and
   62.5 GB they read the whole checkpoint per token for a 4.4–4.9 tok/s ceiling; the 4-bit
   checkpoints measure 11.5 for a fraction of the memory. Record the arithmetic as the reason.
-- **Serving all three at once is not the plan** — one resident model at a time (§6.8). All
+- **Serving all three at once is not the plan** — one resident model at a time (§6.9). All
   three quantized checkpoints together are about 68 GB, so they co-reside on disk comfortably
   and the swap is a load-time cost, not a re-download.
 
@@ -448,9 +461,8 @@ vllm serve $MODEL_PATH \
   $TOOL_FLAGS $REASONING_FLAG $EAGER_FLAG $COMPILATION_FLAG
 ```
 
-`--enable-prefix-caching` is always on and matters more here than on the cluster: coding
-clients resend a large, mostly-identical prompt every turn, and prefill is the compute-bound
-half of a workload whose decode half is already bandwidth-starved.
+`--enable-prefix-caching` is always on — see §6.5 for why it matters more here than on the
+cluster, and what it costs in KV memory.
 
 The benchmark harness builds this argv **once** into an array and reuses it for the serve,
 smoke, and bench paths, so the three cannot drift and produce numbers measured under different
@@ -769,5 +781,5 @@ reproducing in spirit:
   Exact byte equality, not a file count. A partial download that looks complete is the failure
   this catches.
 
-Record the verified byte total per checkpoint in the evidence manifest (§6.6) — it is also the
+Record the verified byte total per checkpoint in the evidence manifest (§6.7) — it is also the
 input to every decode-ceiling calculation in A8.

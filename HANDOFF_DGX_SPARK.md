@@ -198,9 +198,13 @@ bytes_read_per_token  ≈  active_parameter_bytes  +  KV_bytes_read
 
 **What governs interactive speed here is bytes read per token, not parameter count.** That
 sentence belongs in `CLAUDE.md`; A8 works the arithmetic for every candidate checkpoint.
-Realized rates are typically 40–70 % of ceiling. Two consequences:
+Field measurement (A8) puts realized decode at **92–99 % of the computed ceiling**, so treat
+the ceiling as the estimate rather than discounting it. The same measurement shows the KV term
+is small: decode fell only 15 % from zero context to 100K. Two consequences:
 
-- **For a dense model, quantization is the only lever** — it moves bytes-read linearly.
+- **For a dense model, quantization is the primary lever on bytes-read** — it moves the weight
+  term linearly. Speculative decoding is the other lever, and on measured evidence it is
+  larger (A8, §7).
 - **For a sparse (MoE) model, only the active experts are read**, so a 30B model with 3B
   active reads about a tenth of what its parameter count suggests. This is why the default
   model in §9.5 is an MoE.
@@ -282,7 +286,7 @@ Each cost the source project a debugging cycle or a wasted allocation. State the
 
 | source incident | Spark form |
 |---|---|
-| Serve-time caches filled a 35 GB home quota and killed a load mid-profiling (job 53061850) | point the vLLM compile cache, Triton cache, Torch/Inductor caches, HF cache and FlashInfer workspace at explicit NVMe paths. Name them. Several do **not** honour `XDG_CACHE_HOME` (A1) |
+| Serve-time caches filled a 35 GB home quota and killed a load mid-profiling (job 53061850) | point the vLLM compile cache, Triton cache, Torch/Inductor caches, HF cache and FlashInfer workspace at explicit NVMe paths. Name them. FlashInfer at minimum does **not** honour `XDG_CACHE_HOME` (A1) |
 | Triton cache in a per-job temp dir meant recompiling every kernel; on an unfamiliar compute capability that blew the 600 s engine-ready timeout (job 53539504) | sm_121 is exactly such an architecture. Make the Triton cache **persistent** and raise `VLLM_ENGINE_READY_TIMEOUT_S`. Expect the first load of any model to be far slower than the second, and say so |
 | A concurrent job's cleanup deleted a running job's `TMPDIR`, killing FlashAttention 27 problems into a 60-problem benchmark; the 33 resulting HTTP 500s *would have* scored as wrong answers had it not been caught (job 53544726) | namespace scratch per process, and make partial result files distinguishable from complete ones. A truncated benchmark that scores as a bad model is worse than a crash |
 | The `hermes` tool-call parser fails **silently** on models it does not fit; the launcher routes both parsers by model key | keep per-model parser routing in the registry (A6, A8). Silent tool-call failure is the most expensive bug in this stack because it presents as the model being stupid |
@@ -325,11 +329,9 @@ Constraints, not defaults. Each belongs in `CLAUDE.md` as a rule with its conseq
 **1. Three users, internal testing.** Consequences:
 
 - One resident model and three people means the box serializes; see §6.8 for the swap lock.
-- **Do not assume per-user decode rate simply divides.** In the bandwidth-bound regime the
-  weights are read once per step for the whole batch, so continuous batching amortizes the
-  dominant cost and per-user rates hold up better than intuition suggests. The real three-user
-  cost is prefill contention stealing decode steps. Measure the three-user case; do not model
-  it from the single-user number in either direction.
+- **Per-user decode does not divide by the user count.** Measured on a Spark (A8): ten
+  concurrent streams gave 84.3 tok/s aggregate while per-user fell only from 11.5 to ~8.4.
+  Three users will cost less than that. Record the measured numbers rather than a model.
 - **Open WebUI runs one instance with authentication on and three accounts.** Unauthenticated
   is a single-user posture that would give three people one shared chat history — the same
   class of bug the source project fixed once by moving its chat database out of a
@@ -435,7 +437,7 @@ vllm serve $MODEL_PATH \
   --trust-remote-code \
   --enable-prefix-caching \
   --max-model-len $MAX_MODEL_LEN \
-  --gpu-memory-utilization $GPU_MEM_UTIL \
+  --gpu-memory-utilization $GPU_MEM_UTIL \   # cluster posture. Prefer an absolute KV size (§5a, §6.1)
   $TOOL_FLAGS $REASONING_FLAG $EAGER_FLAG $COMPILATION_FLAG
 ```
 
@@ -446,7 +448,7 @@ half of a workload whose decode half is already bandwidth-starved.
 The benchmark harness builds this argv **once** into an array and reuses it for the serve,
 smoke, and bench paths, so the three cannot drift and produce numbers measured under different
 conditions. Keep that property. (The production launcher built its own argv separately and did
-drift — its context default is 32768 while every benchmark ran at 16384.)
+drift — its coding-session default is 32768 (8192 otherwise) while every benchmark ran at 16384.)
 
 Environment that had to be set around the serve command, each line a fixed bug:
 
@@ -543,8 +545,9 @@ their queries leave the machine. Say so plainly rather than burying it.
   null while the model is still thinking — budget tokens generously or disable thinking.
 - **aider** needs a litellm metadata file declaring the context window, or it warns "Unknown
   context window size" and mis-sizes prompts; keys must be duplicated with and without the
-  `openai/` prefix. Note the source project's file has **no entry for any model it currently
-  serves** — it lists only retired ones, so aider warns today. Do not inherit that gap: write
+  `openai/` prefix. Note the source project's file has entries for its chat and
+  smoke models but **none for either coding model it currently serves**, so aider warns in
+  exactly the sessions it is used in. Do not inherit that gap: write
   entries for whatever you serve. Split the window so prompt + `max_tokens` cannot exceed
   `--max-model-len` (the source uses 28000 in / 4096 out against 32768).
 - **opencode** needs a project-local config declaring a custom provider:
@@ -599,6 +602,8 @@ Hub ids, sizes pulled from the Hub file listing, ceilings derived at the assumed
 | Qwen3.8-27B FP8 | `Qwen/Qwen3.8-27B-FP8` | 30.9 GB | 30.9 GB | 8.8 tok/s |
 | Qwen3.8-27B NVFP4 | `unsloth/Qwen3.8-27B-NVFP4` | 23.4 GB | 23.4 GB | 11.7 tok/s |
 | Qwen3.8-27B NVFP4 | `RadixArk/Qwen3.8-27B-NVFP4` | 21.9 GB | 21.9 GB | 12.5 tok/s |
+| Gemma-4-31B-it BF16 | `google/gemma-4-31B-it` | 62.5 GB | 62.5 GB | 4.4 tok/s |
+| Gemma-4-31B-it QAT 4-bit | `google/gemma-4-31B-it-qat-w4a16-ct` | 23.3 GB | 23.3 GB | 11.7 tok/s |
 
 The RadixArk checkpoint deserves a note, because it is the only third-party quantization here
 that publishes its own evidence — and it is the discipline §3 asks for, applied by someone
@@ -606,7 +611,7 @@ else. Its `qualification.json` records an audit verdict of pass against declared
 97.27 % (1283/1319) with zero empty generations, truncations, request errors or OOM kills, a
 measured **MTP acceptance length of 2.775** (acceptance rate 0.59), and SHA-256 hashes for the
 eval log, predictions, tensor audit and server log. The MTP head is deliberately left
-unquantized (`ignore: ['mtp*']`), so the draft head survives — which is the §7 speculative-
+unquantized (`exclude_modules: ["mtp*", "mtp.layers.0*"]`), so the draft head survives — which is the §7 speculative-
 decoding lever, already measured on this checkpoint.
 
 Three risks travel with it, and none is resolvable from a model card:
@@ -625,8 +630,6 @@ Three risks travel with it, and none is resolvable from a model card:
 
 GSM8K is also not coding. A quantization that holds arithmetic can still lose the long-context
 code editing this box is for. It is the best-evidenced third-party option, not a proven one.
-| Gemma-4-31B-it BF16 | `google/gemma-4-31B-it` | 63.4 GB | 63.4 GB | 4.3 tok/s |
-| Gemma-4-31B-it QAT 4-bit | `google/gemma-4-31B-it-qat-w4a16-ct` | 23.6 GB | 23.6 GB | 11.6 tok/s |
 
 Note on the default's ceiling: only the active experts are read per token, so the naive
 weights/bandwidth figure does not apply — but router, attention and shared layers add to the
@@ -636,6 +639,53 @@ checkpoints are **third-party**; the FP8 is first-party. Quantization quality is
 not an assumption — that is the whole discipline in §3. See the RadixArk note above for what
 good third-party evidence looks like, and what it still does not cover.
 
+### Measured on a DGX Spark — Qwen3.8-27B, one day after release
+
+**Provenance: a field report from the user, not measured by this project. Label it that way in
+`CLAUDE.md`.** It is nonetheless the only real Spark data in this document, and it overrides
+every derived figure it touches.
+
+| measurement | value |
+|---|---|
+| decode, NVFP4, zero context | **11.5 tok/s** |
+| decode, NVFP4, 32K context | **10.9 tok/s** |
+| decode, NVFP4, 100K context | **9.8 tok/s** |
+| aggregate throughput, vLLM NVFP4, 10 concurrent | **84.3 tok/s** (~8.4/user) |
+| prefill | **~4,000 tok/s** |
+| single-stream chat, Ollama (MTP speculative decoding on by default) | **26.5 tok/s** |
+| runtime availability | llama.cpp and vLLM day zero; Ollama v0.32.12 same day |
+
+Five things follow, and each is a rule rather than a note:
+
+1. **The bandwidth model is validated to within 1 %.** Computed ceiling for this checkpoint
+   class was 11.7 tok/s (23.4 GB at 273 GB/s); measured is 11.5. Decode on this box is almost
+   perfectly bandwidth-bound, so §5b's arithmetic is a reliable planning tool — use it to size
+   any checkpoint before downloading it.
+2. **Realized rate is ~92–99 % of ceiling, not 40–70 %.** Any rule of thumb discounting the
+   ceiling heavily is wrong here. Ceiling *is* the estimate.
+3. **Context is nearly free at decode.** 11.5 → 10.9 → 9.8 tok/s from 0 to 32K to 100K is a
+   15 % loss across 100K tokens, which means the KV term in §5b's formula is small against the
+   weight term. Long-context work — whole-repository prompts, long agent transcripts — costs
+   far less than on a bandwidth-rich box where the weight term is cheap and KV dominates.
+   Plan for large contexts; they are this hardware's comparative advantage.
+4. **vLLM leaves the MTP head unused by default; Ollama does not.** 26.5 vs 11.5 tok/s
+   single-stream is a **2.3× gap** created entirely by speculative decoding being on by
+   default in one runtime and off in the other. This is far larger than the cluster's measured
+   +53 % (which was taken under `--enforce-eager`). **Configuring speculative decoding
+   explicitly in vLLM is therefore a hard rule, not an optimization** — the flags are in
+   NVIDIA's recipe below (`--speculative_config.*`). A vLLM deployment that skips it hands
+   back more than half the box's interactive speed.
+5. **FP8 wedged under concurrent deep-context load; NVFP4 did not** (vLLM nightly, as tested).
+   This outranks the first-party-versus-third-party preference: prefer NVFP4 for this model
+   until FP8 is re-tested on the pinned build, and record the wedge as the reason.
+
+Concurrency behaves as the batching argument predicts: aggregate rises to 84.3 tok/s at ten
+concurrent while per-user falls only from 11.5 to ~8.4. At three users (§9.1) the per-user
+cost of sharing is small. Do not plan as if decode rate divides by the user count.
+
+Two things this report does **not** settle: which NVFP4 checkpoint was used (this document
+lists two, and they differ by 1.5 GB), and the model's coding quality on the frozen LCB-60.
+
 **Per-model serve facts:**
 
 | | Nemotron Lightning | `qwen3.8_27B` | `gemma4_31B` |
@@ -644,7 +694,7 @@ good third-party evidence looks like, and what it still does not cover.
 | `--reasoning-parser` | `nemotron_v3` | `qwen3` | `gemma4` |
 | `--tool-call-parser` | `qwen3_coder` | `qwen3_coder` — **`hermes` fails silently** | `gemma4` |
 | thinking | reasoning model | **ON** by default (`reasoning_effort` xhigh) | OFF by default — **but the template turns it on whenever tools or a system message are present, i.e. exactly in coding sessions**. Measured cost when on: 5–12× tokens and wall time, no measurable gain on two greedy prompts |
-| speculative decoding | **DSpark draft, plus MTP and DFlash heads** | ships an MTP head, +53 % decode measured — see caveats | none in this checkpoint |
+| speculative decoding | **two external draft models (DSpark, DFlash) plus an in-checkpoint MTP head** | ships an MTP head, +53 % decode measured — see caveats | none in this checkpoint |
 | known trap | — | **also multimodal** — the same profiling OOM risk applies; its config carries a `language_model_only` key | first single-GPU attempt **OOM'd during multimodal profiling**; `--language-model-only` fixed it |
 | frozen LCB-60 | **unmeasured** | 50.00 % (30/60) | **66.67 %** (40/60); hard subset 14/30 vs 6/30 |
 | licence | OpenMDW-1.1 | check the shipped `LICENSE` | check the shipped `LICENSE` |
@@ -656,8 +706,8 @@ good third-party evidence looks like, and what it still does not cover.
   is a lower bound and the gap is an upper bound. Wherever the two appear together, so does this.
 - **The +53 % MTP figure was measured under `--enforce-eager`**, a baseline later shown to be
   ~3.9× understated, so the gain over a CUDA-graphs baseline is unestablished. MTP also
-  perturbed greedy output on 1 of 3 prompts, and its interaction with tool calls is an open
-  vLLM issue — which matters here, because coding is a tool-heavy workload.
+  perturbed greedy output on 1 of 3 prompts, and its interaction with tool calls is open vLLM issue
+  **#46249** — which matters here, because coding is a tool-heavy workload.
 - **CUDA graphs are ON in current production** for the Qwen model, with a compilation-config
   flag disabling one fusion pass. That pass only enables at TP>1, so the crash that once forced
   `--enforce-eager` **cannot occur on this box**. Do not inherit the workaround.
@@ -668,7 +718,8 @@ good third-party evidence looks like, and what it still does not cover.
   on record is the Gemma QAT 4-bit checkpoint on a 48 GB A40. The default model, by contrast, is
   published as a single-GB10 deployment.
 - Qwen3.8-27B loads as `Qwen3_5ForConditionalGeneration`, an architecture vLLM 0.10.2 does not
-  have; the cluster needed 0.26.0. NVIDIA's Spark recipe names 0.27.1. Pin at least that, and
+  have; the cluster needed 0.26.0. Field report (A8): the class was pre-supported at release,
+  so llama.cpp and vLLM both served this model on day zero. NVIDIA's Spark recipe names the image `vllm/vllm-openai:v0.27.1`. Pin at least that, and
   confirm it carries kernels for this GPU.
 
 **NVIDIA's published single-Spark recipe for the default model** — the closest thing to a

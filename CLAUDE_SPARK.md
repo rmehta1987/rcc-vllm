@@ -118,19 +118,29 @@ hosts → launch → `pre_exec` → serve → health check. So the decision is *
 and the pin lives in that fork's `container:` field alongside the flags it was validated with.
 Do not pair a recipe's flags with a different image and assume the combination holds.
 
-Known images, none of them yet confirmed on this box:
+Known images. Architecture and CUDA are **verified from the registry manifests**, 2026-08-26:
 
-| image | from | note |
-|---|---|---|
-| `ghcr.io/drowzeys/keys-vllm-027-gb10-qwen38` | the NVFP4+DSpark reference recipe | **GB10-specific**, and the only one built for this hardware |
-| `ghcr.io/spark-arena/dgx-vllm-eugr-nightly` | the official Spark recipe | community nightly |
-| `vllm/vllm-openai:qwen38` | vLLM's own recipe for this model | a fork build in the 0.27 range |
-| ~~`vllm/vllm-openai:v0.27.1-aarch64-cu129-ubuntu2404`~~ | upstream stable | **ruled out** — cu129 against a CUDA 13.0 host (§1.1) |
+| image | from | os/arch | CUDA | note |
+|---|---|---|---|---|
+| `ghcr.io/drowzeys/keys-vllm-027-gb10-qwen38:mtp3-20260813` | the NVFP4+DSpark reference recipe | **linux/arm64** | **13.0.2** | **GB10-specific**; start here |
+| `ghcr.io/spark-arena/dgx-vllm-eugr-nightly:latest` | the official Spark recipe | **linux/arm64** | **13.0.2** | community nightly |
+| `vllm/vllm-openai:qwen38` | vLLM's own recipe for this model | not checked | not checked | a fork build in the 0.27 range |
+| ~~`vllm/vllm-openai:v0.27.1-aarch64-cu129-ubuntu2404`~~ | upstream stable | arm64 | cu129 | **ruled out** — wrong CUDA for a 13.0 host (§1.1) |
+
+Both Spark images are **single-arch arm64**, not multi-arch manifests. That is a safety
+property: a wrong-architecture pull fails loudly with "no matching manifest for
+linux/amd64" rather than silently running under emulation.
 
 Start from the GB10-specific one, since the reference recipe's ~75 tok/s target was measured
-with it. `UNVERIFIED` for whichever you pick: that it carries sm_121 kernels. Confirm at first
-load — the startup log must select a Marlin/W4A16 kernel, with no "no kernel image is
-available" error and no PTX JIT-fallback warning. Pin the digest once pulled.
+with it. What remains `UNVERIFIED` is narrower than it was: **that the image's kernels cover
+sm_121**. Confirm at first load — the startup log must select a Marlin/W4A16 kernel, with no
+"no kernel image is available" error and no PTX JIT-fallback warning. Pin the digest once
+pulled.
+
+Both images carry `NVIDIA_REQUIRE_CUDA=cuda>=13.0 …driver>=535,driver<536…` — stock NVIDIA
+base-image boilerplate. The host runs driver 580.159.03, so if the container toolkit ever
+refuses the constraint, `NVIDIA_DISABLE_REQUIRE=1` is the documented escape hatch. Unlikely to
+bite; noted so it is not mistaken for a real incompatibility.
 
 `Qwen3_5ForConditionalGeneration` is registered from vLLM 0.17.0 onward, so that is the
 architecture floor. The reason to run something much newer is kernels and the speculative

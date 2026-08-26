@@ -293,8 +293,8 @@ measured number cites one.
 ## Related               <- why AGENTS.md must not exist; where user docs live
 ```
 
-If the material will not fit, cut reasons to one clause before cutting a rule, and never cut a
-number's provenance.
+Target **~300 lines**. If the material will not fit, cut reasons to one clause before cutting a
+rule, and never cut a number's provenance.
 
 ---
 
@@ -353,7 +353,7 @@ grep -qi 'NVFP4' CLAUDE.md                    && echo ok-quant   || echo MISSING
 grep -qi 'language-model-only' CLAUDE.md      && echo ok-mmodal  || echo MISSING-mmodal
 grep -qi 'AGENTS.md' CLAUDE.md                && echo ok-agents  || echo MISSING-agents
 grep -qiE 'swap|lock' CLAUDE.md               && echo ok-swap    || echo MISSING-swap
-wc -l CLAUDE.md
+wc -l CLAUDE.md                                # target ~300
 
 # Absent: paths into an unreachable filesystem, and cluster machinery.
 grep -n '/project/rcc' CLAUDE.md                                        # expect: no hits

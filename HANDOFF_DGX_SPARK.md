@@ -52,10 +52,10 @@ You are writing the rules that govern the install, not performing it. If a step 
 
 ### STOP conditions — ask the user, do not guess
 
-1. **The named model does not resolve, or does not fit.** "Qwen 3.8 Max" is not a checkpoint
-   this project has ever served (§9.5). If you cannot pin it to a specific repository, or if
-   the pinned checkpoint exceeds the memory budget even quantized, stop and report the sizing
-   arithmetic rather than substituting a different model.
+1. **The measured decode rate is unusable, or a checkpoint does not fit.** Both models are
+   pinned (§9.5, A8) — do not substitute a different one. But if BF16 measures unusably slow
+   and no quantized checkpoint of that model loads on sm_121, stop and report the arithmetic
+   and what you tried. Swapping in a model the user did not choose is not your call.
 2. **§5's measured hardware contradicts §5's assumed table** — different memory size,
    different compute capability, no container runtime. The design consequences in §5a–c are
    derived from those specs; if they are wrong, the rules built on them are wrong.
@@ -403,36 +403,40 @@ the MCP servers get rewritten, and each rewrite is an opportunity to lose a fix 
 recorded as a comment in Appendix A. Work through A1's environment list and A6's parser
 routing deliberately rather than rediscovering them.
 
-**5. Two models: Qwen3.8 and Gemma-4, covering inference, chat, and coding.** No separate
-small/fast preset and no general-chat 72B — the same two models serve all three workloads.
-That is a sound choice for a box that can hold one model at a time: fewer swaps, and both
-are strong enough to be the only thing resident.
+**5. Two models, pinned: `qwen3.8_27B` and `gemma4_31B`.** Qwen3.8-27B (dense 27.8B) and
+Gemma-4-31B-it (dense 30.7B), covering inference, chat, and coding between them. No separate
+small/fast preset and no general-chat 72B. That is a sound choice for a box that holds one
+model at a time: fewer swaps, and both are strong enough to be the only thing resident.
+Full operational detail for both — parsers, thinking behaviour, measured scores, serve flags
+— is in **A8**, which you should treat as the starting registry entry for each.
 
-Two things about this decision need to reach the new `CLAUDE.md` as hard constraints:
+Three consequences to write into the new `CLAUDE.md` as hard constraints:
 
-- **Confirm the exact checkpoint before sizing anything.** The user named "Qwen 3.8 Max",
-  which is *not* the checkpoint the source project serves — that one is `qwen3.8_27B`
-  (Qwen3.8-27B, dense 27.8B, BF16). Get the exact Hugging Face repository id, parameter
-  count, and weight dtype for both models before writing a single memory number, because on
-  128 GB the difference between a 27B and a larger "Max" variant is the difference between
-  fits-and-serves and does-not-load. If the Max variant exceeds the budget, say so plainly
-  and propose the largest variant that fits rather than quietly substituting one.
-- **Both of these are dense models, which makes quantization mandatory rather than
-  preferred.** §5b's arithmetic applies directly: a dense ~27–31B in BF16 is 55–61 GB of
-  weights read per token, capping decode near 4–5 tok/s at ~273 GB/s — technically resident,
-  practically unusable for interactive coding. The same models at 4-bit read ~14–16 GB and
-  raise the ceiling to roughly 17–19 tok/s. The architectural lever (§5b) is unavailable, so
-  the whole margin has to come from quantization, speculative decoding, and prefix caching.
-  Verify the arithmetic by measurement, and if 4-bit still does not clear a usable
-  interactive rate, that is a finding to report, not to paper over.
+- **Both are dense, so quantization is mandatory rather than preferred.** §5b's arithmetic
+  applies directly: a dense 27–31B in BF16 is 55–61 GB read per token, capping decode near
+  4–5 tok/s at ~273 GB/s — resident, but practically unusable for interactive coding. The
+  same models at 4-bit read ~14–16 GB and raise the ceiling to roughly 17–19 tok/s. The
+  architectural lever (§5b) is unavailable, so the whole margin has to come from
+  quantization, speculative decoding, and prefix caching. Measure, and if 4-bit still does
+  not clear a usable interactive rate, report that as a finding (STOP 1).
+- **Neither model has ever been served on one GPU.** Every cluster job for both ran TP=2
+  across two 40–80 GB cards (A8). TP=1 is now mandatory (§9.3), which means single-device
+  residency for a 55–61 GB BF16 checkpoint is *unproven*, not merely untested — and it is the
+  first thing to establish, before any quality work.
+- **The quality numbers transfer; the speed numbers do not.** Both models were scored on the
+  same frozen 60-problem LiveCodeBench subset under one harness (A8). Carry those scores into
+  the registry as priors with their caveat, and re-measure only decode rate on the Spark.
+  Re-running the benchmark is not required to start; re-running it after quantization is,
+  because that is the one number quantization can silently destroy.
 
 One concrete lead: the source project staged **`Gemma-4-31B-it-qat-w4a16`** — a
 quantization-aware-trained 4-bit checkpoint, ~22 GB on disk, which passed a serve-and-accept
-check on a single 48 GB A40. It was deliberately never advertised to cluster users because
-its coding quality is unmeasured and Google publishes no quantized-vs-BF16 comparison. For
-the Spark it is the most promising starting point on record: QAT 4-bit is exactly the shape
-this box wants, and measuring the quality gap that the cluster never needed to measure is now
-worth doing. Treat the unmeasured quality as an open task, not as a reason to skip it.
+check on a single 48 GB A40. That is the only evidence on record of either model serving on
+one card. It was never advertised to cluster users because its coding quality is unmeasured
+and Google publishes no quantized-vs-BF16 comparison. For the Spark it is the most promising
+starting point available: QAT 4-bit is exactly the shape this box wants, and the quality gap
+the cluster never needed to measure is now worth measuring. Treat that gap as an open task,
+not as a reason to skip the checkpoint.
 
 ---
 
@@ -669,3 +673,48 @@ convention, and is the part to carry:
 They live in a **dedicated virtual environment**, deliberately not the serving one, so the
 MCP SDK's dependency tree can never perturb vLLM. The Spark analogue exposes box state —
 resident model, free unified memory, temperature, disk — under the same rules.
+
+### A8. The two models, exactly
+
+Everything the source project measured about the two pinned models (§9.5). This is the
+starting content for the Spark registry — carry the facts, re-measure the rates.
+
+| | `qwen3.8_27B` | `gemma4_31B` |
+|---|---|---|
+| weights | Qwen3.8-27B, dense 27.8B, BF16 | Gemma-4-31B-it, dense 30.7B, BF16 |
+| architecture | hybrid Gated DeltaNet + attention | dense transformer |
+| `--reasoning-parser` | `qwen3` | `gemma4` |
+| `--tool-call-parser` | `qwen3_coder` — **`hermes` fails silently on it** | `gemma4` |
+| thinking | **ON** by default (`reasoning_effort` xhigh) | **OFF** by default; opt in via `chat_template_kwargs.enable_thinking` |
+| cost of thinking | (the default) | measured **5–12× tokens and wall time**, no measurable quality gain |
+| draft head | ships an **MTP head worth +53 % decode**, unused on the cluster | none in this checkpoint (verified on disk) |
+| CUDA graphs | forced `--enforce-eager` by a crash — a workaround, not a setting | not required |
+| proven on | TP=2, H100 / H200 | TP=2 on H100 NVL, A100 80 GB, A100 40 GB, A40 |
+| frozen LCB-60 | 50.00 % (30/60) | **66.67 %** (40/60); hard subset 14/30 vs 6/30 |
+| quantized checkpoint on record | none | `Gemma-4-31B-it-qat-w4a16`, ~22 GB, served on one A40, quality unmeasured |
+
+**The two scores are not like-for-like.** They were measured with `enable_thinking: false`,
+which is Gemma's native default but suppresses Qwen3.8's `xhigh` default — so 50.00 % is a
+lower bound for Qwen and the 16.67-point gap is an upper bound on the difference. Wherever
+those two numbers appear together, that caveat appears too. The models also differ in
+character, not just score: Qwen thinks by default and suits hard problems; Gemma is faster
+and cheaper by default. Offering both is the point.
+
+Serve details that carried across every cluster job for both: 32768 context for coding
+sessions, `--enable-prefix-caching` on, and an aider metadata split of 28000 in / 4096 out so
+prompt plus `max_tokens` cannot exceed the window.
+
+Three things to establish on the Spark before either is declared servable:
+
+1. **Single-device residency at TP=1** — never done for either model (§9.5).
+2. **Minimum vLLM version.** Qwen3.8-27B loads as `Qwen3_5ForConditionalGeneration`, an
+   architecture vLLM 0.10.2 does **not** have; the cluster needed 0.26.0. Whatever you pin
+   must be at least that new, and must have sm_121 kernels. Check both models load before
+   pinning the version.
+3. **The MTP head.** Unused on the cluster because it was not needed there. On a
+   bandwidth-bound box a +53 % decode draft head is one of the few large levers available
+   (§7) — evaluate it early rather than treating it as a footnote.
+
+Licensing: verify the `LICENSE` file shipped with each checkpoint rather than trusting a
+table. The source project's user docs list one served model with real obligations and treat
+the rest as permissive, but that page describes a fleet that no longer exists.

@@ -19,7 +19,9 @@ desktop session, Open WebUI and the gateway are also using. On a discrete GPU an
 kills the job; here it causes system-wide pressure and OOM-killed processes. **vLLM's ordinary
 0.9 default is unsafe on this box.**
 
-- **Serve ceiling: 108 GB. OS floor: 20 GB.** `UNVERIFIED` — placeholder from 128 GB × 0.85.
+- **Placeholder budget: 100 GB serve / 20 GB OS floor / 8 GB margin.** `UNVERIFIED`, derived
+  from 128 GB × 0.85 ≈ 108 then held back further. **Do not allocate against it** — it is a
+  stand-in until the derivation below has been run.
 - Derive the real numbers: `budget = free unified memory − OS floor − margin`, measured with
   **Open WebUI and the gateway already resident**, not on an idle box.
   ```bash
@@ -27,9 +29,10 @@ kills the job; here it causes system-wide pressure and OOM-killed processes. **v
   free -g                                        # then read the pool
   ```
 - Prefer `--kv-cache-memory` (absolute) to `--gpu-memory-utilization` (fraction) wherever the
-  pinned build supports it.
-- A preflight must assert free unified memory before loading weights and fail with a legible
-  message rather than OOM the box.
+  pinned build supports it. If it does not, compute the fraction as `budget ÷ total pool` and
+  record it — never fall back to a default.
+- A preflight must fail before loading weights unless `MemAvailable` ≥ weights bytes +
+  `--kv-cache-memory` + 5 GB, printing all three terms. Do not let a load OOM the box.
 
 ### 1.2 The platform
 
@@ -52,7 +55,8 @@ bytes_read_per_token ≈ active_parameter_bytes + KV_bytes_read
 **Interactive speed is governed by bytes read per token, not parameter count.** Size any
 checkpoint with this before downloading it.
 
-Measured on this hardware (field report, 2026-08-26, `unsloth/Qwen3.8-27B-NVFP4`):
+Measured on this hardware — **a field report supplied by the box owner, 2026-08-26, not
+measured by this project**; checkpoint `unsloth/Qwen3.8-27B-NVFP4`:
 
 | | |
 |---|---|
@@ -63,9 +67,10 @@ Measured on this hardware (field report, 2026-08-26, `unsloth/Qwen3.8-27B-NVFP4`
 
 Three consequences:
 
-1. **Realized decode is 92–99 % of the computed ceiling** for a dense checkpoint (computed
-   11.7, measured 11.5). Treat the ceiling as the estimate; do not discount it. For an MoE,
-   only active experts are read, so compute a range and measure early.
+1. **Realized decode was 98 % of the computed ceiling** on the one measured point (computed
+   11.7 from 23.4 GB ÷ 273 GB/s; measured 11.5). Treat the ceiling as the estimate; do not
+   discount it. For an MoE only active experts are read, so its ceiling is a **range** —
+   bracket it between active-experts-only and active-plus-trunk, and measure it early.
 2. **Context is nearly free at decode** — 15 % loss across 100K tokens. Plan for large
    contexts; they are this hardware's comparative advantage. **Prefill is what scales with
    context**, which is why §4.4 exists.
@@ -94,7 +99,9 @@ vllm/vllm-openai:v0.27.1-aarch64-cu129-ubuntu2404
 Verified published as `linux/arm64` on Docker Hub. The bare `v0.27.1` tag is a multi-arch
 manifest that also resolves correctly; the fully-qualified tag removes any ambiguity about
 architecture and CUDA minor version. Pin the digest once you have pulled it. `UNVERIFIED`:
-that this tag carries sm_121 kernels — confirm at first load.
+that this tag carries sm_121 kernels. Confirm at first load: the startup log must select a
+Marlin/W4A16 kernel, with no "no kernel image is available" error and no PTX JIT-fallback
+warning.
 
 **v0.27.1 is a floor, not a preference.** The default model loads as
 `Qwen3_5ForConditionalGeneration`, an architecture absent from older vLLM.
@@ -127,21 +134,24 @@ a run id (§9).
 | key | checkpoint | size | ceiling | status |
 |---|---|---:|---:|---|
 | `qwen3.8_27B` | `unsloth/Qwen3.8-27B-NVFP4` | 23.4 GB | 11.7 (**measured 11.5**) | **served — default** |
-| `nemotron_30b_a3b` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` | 21.6 GB | range, see §3.3 | served — fast alternative |
+| `nemotron_30b_a3b` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` | 21.6 GB | range (§1.3) | served — fast alt; **coding quality unmeasured**, which is what would justify promoting it |
 | — draft | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark` | 1.3 GB | — | draft for the above |
 | `gemma4_31B` | `google/gemma-4-31B-it-qat-w4a16-ct` | 23.3 GB | 11.7 | served — second coding option |
 | `qwen3.8_27B_bf16` | `Qwen/Qwen3.8-27B` | 55.6 GB | 4.9 | **not served** — §1.4 |
 | `gemma4_31B_bf16` | `google/gemma-4-31B-it` | 62.5 GB | 4.4 | **not served** — §1.4 |
 
-Not registered, with reasons: `Qwen/Qwen3.8-27B-FP8` (30.9 GB, 8.8 tok/s) **wedged under
+Not registered, with reasons: `Qwen/Qwen3.8-27B-FP8` (30.9 GB → 8.8 ceiling) **wedged under
 concurrent deep-context load** where NVFP4 did not — do not serve until re-tested on the pinned
-build. `RadixArk/Qwen3.8-27B-NVFP4` (21.9 GB, 12.5 tok/s) publishes real evidence (GSM8K
-97.27 %) but is a **W4A4** recipe validated on GB300 against this box's W4A16 path (§3.2), its
+build. `RadixArk/Qwen3.8-27B-NVFP4` (21.9 GB → 12.5 ceiling) publishes real evidence (GSM8K
+97.27 %, which is not coding) but is a **W4A4** recipe validated on GB300 against this box's W4A16 path (§3.2), its
 card names SGLang rather than vLLM, and its evaluation ran with an uncalibrated FP8 KV cache.
-It is the first fallback if the default disappoints, not a free upgrade.
+It is the first fallback if the default disappoints, not a free upgrade. It is also the source
+of the only speculative-decoding acceptance data on record (length 2.775, rate 0.59) — measured
+on *that* checkpoint under SGLang, so it does not transfer to ours.
 
 **Quality scores belong to the BF16 parents, not to what we serve.** On a frozen 60-problem
-LiveCodeBench subset, elsewhere: `qwen3.8_27B` 50.00 %, `gemma4_31B` 66.67 %. **Not
+LiveCodeBench subset, elsewhere, at TP=2: `Qwen/Qwen3.8-27B` 50.00 %,
+`google/gemma-4-31B-it` 66.67 %. **Not
 like-for-like** — that run disabled thinking, which is Gemma's native default but suppresses
 Qwen's, so 50.00 % is a lower bound and the gap an upper bound. Gemma is therefore the second
 option, not the default. **Both served checkpoints are unscored: quantization is the one thing
@@ -149,6 +159,8 @@ that silently destroys a coding score, and re-scoring them is owed work.**
 
 ### 3.2 Quantization on this GPU
 
+A historical NVFP4 NO-GO recorded elsewhere was `cudaErrorUnsupportedPtxVersion` on an EOL
+driver, **not** a silicon limit — it does not apply here, and NVFP4 is the format we serve.
 GB10 stores NVFP4 but computes **W4A16 via Marlin** — there is no native FP4 tensor-core path
 here (GB200 has one). **Marlin is load-bearing, not legacy**; do not steer away from it.
 Stored precision ≠ compute path, and weight precision ≠ **activation** precision.
@@ -160,12 +172,6 @@ Stored precision ≠ compute path, and weight precision ≠ **activation** preci
 | FP8 | 8-bit | 8/16-bit | known to wedge under load (§3.1) |
 | NVFP4 W4A4 | 4-bit | **4-bit** | `UNVERIFIED` — likely unsupported on a W4A16 path |
 
-### 3.3 Sizing
-
-The fast alternative reads only its active experts (3B of 30B), so its ceiling is a **range**,
-not a point: bracket it between active-experts-only and active-plus-trunk, and measure it
-before publishing a number.
-
 ---
 
 ## 4. Serving
@@ -174,11 +180,17 @@ before publishing a number.
 
 | | `qwen3.8_27B` (default) | `nemotron_30b_a3b` | `gemma4_31B` |
 |---|---|---|---|
+| architecture | dense 27.8B, **hybrid** GDN + attention, 262144 ctx | **hybrid** Mamba-2 + MoE, 30B/3B active, 1M ctx | dense 30.7B |
+| extra serve flags | — | `--moe-backend marlin --mamba-backend flashinfer --mamba-cache-mode align` | — |
 | `--reasoning-parser` | `qwen3` | `nemotron_v3` | `gemma4` |
 | `--tool-call-parser` | `qwen3_coder` | `qwen3_coder` | `gemma4` |
-| thinking | on by default | reasoning model | off by default — **but on whenever tools or a system message are present, i.e. every coding session**; costs 5–12× tokens and wall time |
+| thinking | on by default | reasoning model | off by default — **but on whenever tools or a system message are present, i.e. every coding session** |
 | speculative decoding | in-checkpoint MTP head | external DSpark draft | none |
 | multimodal | yes — see §4.3 | no | yes — see §4.3 |
+
+**Gemma's thinking costs 5–12× tokens and wall time** with no measurable gain (n=2 prompts).
+Its template enables thinking in every coding session, so budget for it or suppress it per
+request with `chat_template_kwargs.enable_thinking: false`; record which you chose.
 
 **`hermes` fails silently on the default model.** A wrong tool parser does not error; it
 presents as the model being stupid. Route the parser by model key, never globally.
@@ -192,12 +204,16 @@ vllm serve $CHECKPOINT \
   --enable-prefix-caching \
   --max-model-len $DERIVED \        # §4.2
   --kv-cache-memory $ABSOLUTE \     # §1.1
-  --language-model-only \           # §4.3
-  $PARSER_FLAGS $SPECDEC_FLAGS
+  --enable-auto-tool-choice \       # WITHOUT THIS the tool parser never activates (§4.1)
+  $PARSER_FLAGS $SPECDEC_FLAGS $MODEL_FLAGS
 ```
 
+`$MODEL_FLAGS` carries the per-model extras above, plus `--language-model-only` for the two
+dense models (§4.3) — it is not a global flag.
+
 No `--tensor-parallel-size`. No `--enforce-eager` — it was a crash workaround elsewhere, the
-crash needs TP>1, and leaving it on costs ~3.9× decode. `--trust-remote-code` is not needed:
+crash needs TP>1, and leaving it on cost ~3.9× throughput on the source system (on-box cost
+`UNVERIFIED`). `--trust-remote-code` is not needed:
 both architectures are pre-supported in the pinned build.
 
 ### 4.2 Context length is derived, not chosen
@@ -213,14 +229,23 @@ A vision tower profiles at startup and can OOM **even when the language weights 
 has happened. **First serve runs `--language-model-only`.** Enabling vision is a separate step,
 gated on measured headroom against §1.1, and the registry records which mode is live.
 
+### 4.3.1 The vendor recipe binds the wrong interface
+
+NVIDIA publishes a single-DGX-Spark recipe for the fast alternative — the only officially
+validated configuration for any model here, and the source of its extra flags above. **It omits
+`--host`, so vLLM binds `0.0.0.0`**, which §6 forbids. It also sets `--gpu-memory-utilization
+0.85`, calibrated for that model on an idle box, and `--kv-cache-dtype fp8`, whose scale
+calibration is the same open question noted for RadixArk. Take its flags; never run it verbatim.
+
 ### 4.4 Prefix caching — always on
 
-Prefill is ~4,000 tok/s, so a 32K prompt costs ~8 s and a 100K prompt ~25 s **per turn**. A
-coding agent resends a growing, near-identical prompt every turn; prefix caching turns that
-into a lookup. Two costs, both easy to miss:
+A coding agent resends a growing, near-identical prompt every turn, and at ~4,000 tok/s prefill
+that is ~8 s per turn at 32K and ~25 s at 100K. Prefix caching turns it into a lookup.
+`UNVERIFIED`: both served models are hybrids and prefix-caching support for them on the pinned
+build is unconfirmed — check the startup log on first serve and record it. Two costs:
 
-- **Cached blocks live in the §1.1 KV budget.** Cache size trades against context length — set
-  it explicitly rather than taking a default.
+- **Cached blocks live in the §1.1 KV budget.** There is no separate size flag: when deriving
+  `--kv-cache-memory`, reserve headroom above the max-model-len KV requirement and record it.
 - **vLLM reports full `prompt_tokens` regardless of cache hits.** Per-user usage logs therefore
   overstate real prefill work and cannot be read as capacity.
 
@@ -231,18 +256,20 @@ the interactive speed.**
 
 - **Default** — in-checkpoint **MTP head**. Verified present: the checkpoint's safetensors
   index carries 15 `mtp.*` tensors, the same set as its BF16 parent. Configure with
-  `--speculative_config` using an MTP method. `UNVERIFIED`: the exact flag form for this build
-  (`num_nextn_predict_layers` is absent from config — the head is carried as tensors).
+  `--speculative_config` using an MTP method. `UNVERIFIED`: settle the syntax from the pinned
+  build's `--help` at install (`num_nextn_predict_layers` is absent from config — the head is
+  carried as tensors). **If the build exposes no MTP method, STOP and record it — do not
+  quietly serve without speculative decoding.**
 - **Fast alternative** — external draft: `--speculative_config.model <DSpark checkpoint>` with
   `--speculative_config.num_speculative_tokens 3`.
 - **Do not cross these.** Pointing the Nemotron draft at the Qwen target is a vocabulary
   mismatch.
-- The 2.3× figure came from Ollama running its own quantized artifact, so it bundles runtime
-  and checkpoint differences — treat it as motivation, not a target. Realized vLLM gain here is
-  `UNVERIFIED`.
-- **MTP × tool calls is an open vLLM issue (#46249).** Enable speculative decoding, run a
-  tool-call smoke test with it **on**, and record the fallback condition. Do not resolve this by
-  quietly leaving it off.
+- **The 2.3× is motivation, not a target.** Ollama ran its own quantized artifact, so the gap
+  bundles runtime and checkpoint differences. Realized vLLM gain here is `UNVERIFIED`.
+- **Open vLLM issue #46249** reports tool calls failing with MTP enabled on the **Responses
+  API**, on a different Qwen model. Our clients use `/v1/chat/completions`, so it may not apply:
+  enable speculative decoding, smoke-test tool calls on that surface with it **on**, and record
+  the result and the fallback condition rather than pre-emptively disabling it.
 
 ---
 
@@ -255,12 +282,17 @@ the interactive speed.**
 3. **One resident model; swapping takes a lock.** The reason is *not* that they do not fit — at
    4-bit all three total ~68 GB and fit together. It is that KV cache wants the leftover memory
    and a second server competes for the same scarce bandwidth. A swap requires no in-flight
-   requests, takes an explicit lock, and is visible to the other users. The CLI answers "what is
-   resident, and who is using it".
+   requests, takes a `flock` on `/opt/spark-ai/run/resident.lock`, and is visible: `ai status`
+   prints the resident model and any user with gateway requests in the last 10 minutes.
 4. **First load of any model is far slower than the second** — sm_121 has no prebuilt kernels
    and the Triton cache compiles cold. This is why `TRITON_CACHE_DIR` persists and the ready
    timeout is raised (§2). It is not a hang; say so before someone kills it.
-5. **After any agent or background run, check for orphans**: `pgrep -af 'vllm serve'` and
+5. **Keep long-run scratch off `/tmp`** — systemd ages it, and a benchmark that lost its scratch
+   mid-run produced 33 HTTP 500s that would have scored as wrong answers. Write results as
+   `<name>.partial` and atomic-rename on completion; the scorer refuses `.partial`.
+6. **Record decode at t=0 and after ten minutes sustained, and publish both.** A desk box under
+   sustained load throttles; a burst number alone misleads users.
+7. **After any agent or background run, check for orphans**: `pgrep -af 'vllm serve'` and
    `docker ps`. A stray process holding unified memory blocks everyone.
 
 ---
@@ -271,6 +303,7 @@ Three users. **Every listener binds `127.0.0.1`.** Browser access is over an SSH
 the tunnel is the entire security boundary — no LAN bind, no TLS, no auth proxy.
 
 ```bash
+# 3000 = Open WebUI, 8421 = gateway (vLLM itself stays on 8000, unexposed)
 ssh -N -L 3000:127.0.0.1:3000 -L 8421:127.0.0.1:8421 <user>@<spark-host>
 ```
 
@@ -326,9 +359,10 @@ MCP SDK's dependencies cannot perturb vLLM.
 
 `_evidence/` is gitignored and holds the only copy of measured results.
 
-- **Every serve, benchmark and scoring run gets a tracked id** in `_evidence/manifest.jsonl`,
-  with date, checkpoint, exact serve argv, and result. **Every measured number in this file or
-  in the registry cites one.**
+- **Every serve, benchmark and scoring run gets a tracked id** in the append-only
+  `_evidence/manifest.jsonl`, with date, checkpoint, exact serve argv, and result. **Every
+  on-box number cites a manifest id; every off-box number cites its source and date.** No number
+  in this file cites a manifest id yet, because none was measured here.
 - **Whenever two numbers appear together, so do the conditions they were measured under.** The
   50.00 / 66.67 comparison above is why.
 - Partial result files must be distinguishable from complete ones. A truncated benchmark that

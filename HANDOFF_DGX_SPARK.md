@@ -562,7 +562,7 @@ report from the user, not measured by this project. Label it that way.
 | decode, 0 / 32K / 100K context | **11.5 / 10.9 / 9.8 tok/s** |
 | aggregate, 10 concurrent | **84.3 tok/s** (~8.4/user) |
 | prefill | **~4,000 tok/s** |
-| single-stream, Ollama | **26.5 tok/s** |
+| single-stream, Ollama (ships the MTP head with speculative decoding **on by default**) | **26.5 tok/s** |
 | availability | llama.cpp and vLLM day zero; Ollama v0.32.12 same day |
 
 1. **The bandwidth model is validated to 1 %** — computed 11.7, measured 11.5. Use §5b to size

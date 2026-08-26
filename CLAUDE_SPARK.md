@@ -42,7 +42,7 @@ kills the job; here it causes system-wide pressure and OOM-killed processes. **v
 | 128 GB LPDDR5X unified, **shared with the OS** | `free -g`; `nvidia-smi -q -d MEMORY` — same pool? |
 | ~273 GB/s memory bandwidth (vendor spec) | no read-only probe exists; run a STREAM-class microbenchmark and record it |
 | 20-core Arm, **aarch64** | `uname -m` |
-| DGX OS, container runtime present | `cat /etc/os-release`; `docker info`; `nvidia-smi` driver + CUDA |
+| DGX OS, container runtime present, **CUDA 13.0** | `cat /etc/os-release`; `docker info`; `nvcc --version` |
 | ~4 TB NVMe | `df -h` — the weights budget is whatever is actually free |
 
 ### 1.3 Decode is bandwidth-bound
@@ -89,42 +89,50 @@ Three consequences:
 
 ## 2. Install and pinning
 
-**Container only. Do not build vLLM from source.** On aarch64 for sm_121 that means compiling
-kernels for a compute capability with no prebuilt artifacts — see §5.4.
+**Container only. Never build vLLM from source.** On aarch64 for sm_121 that means compiling
+kernels for a compute capability with no prebuilt artifacts — the cold-compile failure in §5.4.
 
-```
-vllm/vllm-openai:v0.27.1-aarch64-cu129-ubuntu2404
-```
+**Target CUDA 13.0**, per NVIDIA's DGX Spark vLLM playbook. Any image built against an older
+CUDA is the wrong branch, however convenient its tag looks.
 
-Verified published as `linux/arm64` on Docker Hub. The bare `v0.27.1` tag is a multi-arch
-manifest that also resolves correctly; the fully-qualified tag removes any ambiguity about
-architecture and CUDA minor version. Pin the digest once you have pulled it. `UNVERIFIED`:
-that this tag carries sm_121 kernels. Confirm at first load: the startup log must select a
-Marlin/W4A16 kernel, with no "no kernel image is available" error and no PTX JIT-fallback
-warning.
+**The container is a field of the recipe, not a separate pin we maintain.** sparkrun (§4.7)
+resolves it: its execution flow is `prepare_image()` (build or pull) → sync image and model to
+hosts → launch → `pre_exec` → serve → health check. So the decision is *which recipe you fork*,
+and the pin lives in that fork's `container:` field alongside the flags it was validated with.
+Do not pair a recipe's flags with a different image and assume the combination holds.
 
-Two alternatives exist and may be better: the vLLM recipe names a fork build
-`vllm/vllm-openai:qwen38`, and the NVFP4+DSpark reference recipe uses a GB10-specific
-community image, `ghcr.io/drowzeys/keys-vllm-027-gb10-qwen38`. NVIDIA's Spark playbook
-specifies **CUDA 13.0**, which the cu129 tag above does not match — settle this before pinning.
+Known images, none of them yet confirmed on this box:
+
+| image | from | note |
+|---|---|---|
+| `ghcr.io/drowzeys/keys-vllm-027-gb10-qwen38` | the NVFP4+DSpark reference recipe | **GB10-specific**, and the only one built for this hardware |
+| `ghcr.io/spark-arena/dgx-vllm-eugr-nightly` | the official Spark recipe | community nightly |
+| `vllm/vllm-openai:qwen38` | vLLM's own recipe for this model | a fork build in the 0.27 range |
+| `vllm/vllm-openai:v0.27.1-aarch64-cu129-ubuntu2404` | upstream stable | published `linux/arm64`, but **cu129, not CUDA 13** |
+
+Start from the GB10-specific one, since the reference recipe's ~75 tok/s target was measured
+with it. `UNVERIFIED` for whichever you pick: that it carries sm_121 kernels. Confirm at first
+load — the startup log must select a Marlin/W4A16 kernel, with no "no kernel image is
+available" error and no PTX JIT-fallback warning. Pin the digest once pulled.
 
 `Qwen3_5ForConditionalGeneration` is registered from vLLM 0.17.0 onward, so that is the
-architecture floor; the higher pin is about kernels and speculative-decoding fixes, not the
-architecture. The default model loads as
-`Qwen3_5ForConditionalGeneration`, an architecture absent from older vLLM.
+architecture floor. The reason to run something much newer is kernels and the speculative
+decoding fixes (§4.5), not the architecture.
 
-**Never `pip install -r requirements.txt` into the serving environment.** It clobbers the
+**Never `pip install -r requirements.txt` inside the serving container.** It clobbers the
 pinned build's torch/vLLM pair. This is the most natural-looking wrong move an agent handed a
-repo can make.
+repo can make. If a dependency is genuinely missing, change the image, not the running
+container.
 
-Cache and workspace paths — each line is a bug someone already paid for:
+Cache and workspace paths — each line is a bug someone already paid for. Mount these from the
+host so they survive a container replacement:
 
 ```
 VLLM_CACHE_ROOT=/opt/spark-ai/cache/vllm        # compile cache; large, keep on NVMe
 TRITON_CACHE_DIR=/opt/spark-ai/cache/triton     # MUST persist across runs -- never a temp dir
 TORCHINDUCTOR_CACHE_DIR, TORCH_EXTENSIONS_DIR, TORCH_HOME, XDG_CACHE_HOME
 FLASHINFER_WORKSPACE_BASE=/opt/spark-ai/cache/flashinfer   # ignores XDG; defaults to $HOME
-HF_HOME=/opt/spark-ai/hf
+HF_HOME=/opt/spark-ai/hf                        # sparkrun syncs models here; keep one copy
 VLLM_ENGINE_READY_TIMEOUT_S=2400                # 600 is not enough for a cold Triton cache
 FLASHINFER_CUDA_ARCH_LIST=12.1a                 # GB10's arch string, per the reference recipe
 ```

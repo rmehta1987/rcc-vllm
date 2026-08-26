@@ -212,7 +212,7 @@ both architectures are pre-supported in the pinned build.
 
 Set `--max-model-len` per model from the measured KV budget at install. **32768 is the floor**;
 long context is the target — the default model's native window is 262144 and §1.3 shows decode
-barely degrades with it. Client context declarations (§7.1) are generated from this number, never
+barely degrades with it. Client context declarations are generated from this number, never
 picked independently.
 
 ### 4.3 Both dense models carry vision towers
@@ -320,8 +320,8 @@ discipline **around** it, not a replacement for it.
 
 1. **One resident model.** The reason is *not* that they do not fit — at 4-bit all three total
    ~68 GB and co-reside comfortably. It is that KV cache wants the leftover memory and a second
-   server competes for the same scarce bandwidth. A swap is `sparkrun stop <a> && sparkrun run
-   <b>`, and it affects the other two users: do it with no in-flight requests, and announce it.
+   server competes for the same scarce bandwidth. A swap is `sparkrun proxy unload <a>` then
+   `load <b>` (or plain `stop`/`run`), and it affects the other two users: do it with no in-flight requests, and announce it.
    `sparkrun status` is the answer to "what is resident".
 2. **Bench runs must be unmistakable.** Give every benchmark its own forked recipe with a
    `bench-` prefixed `served_model_name` and a port in 9000–9099. `sparkrun benchmark <recipe>`
@@ -349,24 +349,60 @@ discipline **around** it, not a replacement for it.
 
 ---
 
-## 6. What sparkrun does not do
+## 6. The proxy, and what is left to build
 
-sparkrun launches workloads. It does not give clients a stable address, identify who is calling,
-record usage, or put a browser front end on the box. Those four are why the gateway exists, and
-they are the part of this service we build and maintain.
+**Do not build a gateway.** `sparkrun proxy` is one: a LiteLLM instance (run via `uvx`, no
+permanent install) that discovers running sparkrun endpoints and fronts them with a single
+OpenAI-compatible API.
 
-| need | provided by |
+```bash
+sparkrun proxy start --host 127.0.0.1 --master-key sk-<token>   # docs recommend this bind
+sparkrun proxy status | models
+sparkrun proxy load <recipe> | unload <recipe>                  # swap through the proxy
+```
+
+It gives us, without writing any of it: live endpoint discovery, a background re-scan every
+30 s, health checks via `GET /v1/models`, model aliases so clients address a friendly name,
+and endpoint deduplication across interfaces. Default port is 4000. **A model swap therefore
+reconfigures no client** — which was the whole point of a gateway.
+
+Two operational facts to know before relying on it:
+
+- **Applying a model-set change rewrites the config and restarts the proxy.** LiteLLM's runtime
+  mutation endpoints need a database-backed model store that sparkrun does not provision, so
+  they answer `500 No DB Connected`. A steady-state discovery sweep that finds no change skips
+  the restart entirely and never interrupts serving — but a genuine swap is a proxy restart.
+- **`--master-key` is one shared bearer token, not per-user keys.** LiteLLM's virtual keys and
+  per-user spend tracking need that same absent database.
+
+### What is still ours
+
+| need | status |
 |---|---|
-| launch, stop, logs, status, health check, image and model distribution | sparkrun |
-| one fixed URL that survives a model swap | the gateway |
-| per-user identity, and refusing `bench-` backends | the gateway |
-| per-request usage capture for capacity | the gateway |
-| authenticated browser chat | Open WebUI |
+| launch, stop, logs, status, health, image and model distribution | sparkrun |
+| one fixed URL that survives a swap; model aliases; discovery | `sparkrun proxy` |
+| **per-user identity** — three users behind one shared token | **not provided** (§7) |
+| **per-user usage capture** for capacity | **not provided** — needs the DB LiteLLM wants |
+| **authenticated browser chat** | Open WebUI (§7) |
 
-The gateway holds one fixed URL in front of whichever model is resident, captures each
-response's `usage` to a dated JSONL, and exposes a keyless TTL-cached `/status`
-(ready / loading / no_backend). When a swap happens the gateway follows it; **no client
-reconfigures.** That property is the entire reason a client can be configured once.
+Three users behind a single `--master-key`, with per-user Open WebUI accounts, is defensible
+given the tunnel is already the security boundary — but it means **usage logs cannot attribute
+a request to a person**, and §9's tracked run ids carry that load instead. Decide it explicitly
+rather than by default.
+
+### Recipe trust
+
+sparkrun runs shell commands from recipes: `pre_exec` and `post_exec` inside containers,
+`post_commands` **on the control machine**. Trust is gated accordingly:
+
+- Recipes from a **local path are automatically trusted** — including anything you fork into
+  this repo. **Read a third-party recipe's hooks before forking it**, because forking is what
+  removes the prompt.
+- Third-party registries are untrusted until `sparkrun registry trust <name>`; their hooks
+  prompt once per recipe per session.
+- **URL recipes are never auto-trusted**, regardless of anything else.
+
+The NVFP4 recipes in §4.6 come from third-party registries. Fork them deliberately, hooks read.
 
 ---
 
@@ -376,8 +412,8 @@ Three users. **Every listener binds `127.0.0.1`.** Browser access is over an SSH
 the tunnel is the entire security boundary — no LAN bind, no TLS, no auth proxy.
 
 ```bash
-# 3000 = Open WebUI, 8421 = gateway (vLLM itself stays on 8000, unexposed)
-ssh -N -L 3000:127.0.0.1:3000 -L 8421:127.0.0.1:8421 <user>@<spark-host>
+# 3000 = Open WebUI, 4000 = sparkrun proxy (vLLM itself stays on 8000, unexposed)
+ssh -N -L 3000:127.0.0.1:3000 -L 4000:127.0.0.1:4000 <user>@<spark-host>
 ```
 
 **Every published recipe sets `host: 0.0.0.0`, and so does vLLM when `--host` is unset.** A
@@ -387,7 +423,8 @@ to breach the boundary above, and nothing in sparkrun will warn you.
 - **Open WebUI runs one instance with `WEBUI_AUTH=True` and three accounts.** Unauthenticated
   gives three people one shared chat history; three instances each hold their own embedding
   model in the shared pool.
-- **The gateway API key is mandatory and per-user.** Per-user usage records need an identity.
+- **The proxy runs with `--master-key`**, shared across the three users (§6). Per-user Open
+  WebUI accounts are the practical substitute for per-user identity.
 - Chat history lives in a mode-700 directory under `$HOME`.
 
 ---

@@ -83,7 +83,7 @@ Three consequences:
   tok/s ceiling against 11.5 measured at 4-bit. Do not register a BF16 checkpoint as served.
 - **Tensor parallelism.** One GPU. Any `--tensor-parallel-size` above 1 is a bug, and there is
   no second box — do not add the flag "for later".
-- **A second concurrently-serving model** (§5.3), and **any LAN-bound listener** (§6).
+- **A second concurrently-serving model** (§5.1), and **any LAN-bound listener** (§7).
 
 ---
 
@@ -212,7 +212,7 @@ both architectures are pre-supported in the pinned build.
 
 Set `--max-model-len` per model from the measured KV budget at install. **32768 is the floor**;
 long context is the target — the default model's native window is 262144 and §1.3 shows decode
-barely degrades with it. Client context declarations (§7) are generated from this number, never
+barely degrades with it. Client context declarations (§7.1) are generated from this number, never
 picked independently.
 
 ### 4.3 Both dense models carry vision towers
@@ -289,12 +289,12 @@ unquestioned, but their flags encode work you should not redo.
 | `vllm-project/recipes` | `models/Qwen/Qwen3.8-27B.yaml` — per-variant VRAM, all three spec-decode modes, measured acceptance | its verified-hardware list covers GB300 and RTX 5090; **GB10 is deliberately absent** |
 | `NVIDIA/dgx-spark-playbooks` | Spark playbooks for vLLM, Open WebUI, coding agents, NVFP4 quantization, multi-Spark | its model support matrix does not list this model |
 
-**Every one of these defaults to `host: 0.0.0.0`.** So does vLLM when `--host` is unset. §6
+**Every one of these defaults to `host: 0.0.0.0`.** So does vLLM when `--host` is unset. §7
 forbids it. Take a recipe's flags; never run one verbatim.
 
 ---
 
-## 4.7 Launching: sparkrun
+### 4.7 Launching: sparkrun
 
 `sparkrun` launches, manages and stops inference workloads on one or more DGX Sparks with no
 scheduler. Prefer it to a bespoke launcher — it already covers run, logs, stop, status and
@@ -308,36 +308,69 @@ sparkrun logs|stop|status <recipe> # manage; Ctrl+C detaches, it does not kill
 
 External registries attach through a `.sparkrun/registry.yaml`, which is how the NVFP4 recipes
 in §4.6 are reachable. **Fork the recipe rather than using it unmodified**: at minimum set
-`host: 127.0.0.1` (§6) and replace `gpu_memory_utilization` with the budget derived in §1.1.
+`host: 127.0.0.1` (§7) and replace `gpu_memory_utilization` with the budget derived in §1.1.
 Keep the fork in this repo so the served configuration is versioned with the rules.
 
 ---
 
-## 5. Serving fences
+## 5. Serving discipline
 
-1. **Bench runs must be unmistakable.** Served-model name starts `bench-`; ports 9000–9099. The
-   gateway refuses to route to a `bench-` name, and a bench serve must never write the backend
-   pointer.
-2. **A bench serve must never evict the resident model** while anyone is connected.
-3. **One resident model; swapping takes a lock.** The reason is *not* that they do not fit — at
-   4-bit all three total ~68 GB and fit together. It is that KV cache wants the leftover memory
-   and a second server competes for the same scarce bandwidth. A swap requires no in-flight
-   requests, takes a `flock` on `/opt/spark-ai/run/resident.lock`, and is visible: `ai status`
-   prints the resident model and any user with gateway requests in the last 10 minutes.
+sparkrun (§4.7) owns launch, logs, stop, status and the health check. These rules are the
+discipline **around** it, not a replacement for it.
+
+1. **One resident model.** The reason is *not* that they do not fit — at 4-bit all three total
+   ~68 GB and co-reside comfortably. It is that KV cache wants the leftover memory and a second
+   server competes for the same scarce bandwidth. A swap is `sparkrun stop <a> && sparkrun run
+   <b>`, and it affects the other two users: do it with no in-flight requests, and announce it.
+   `sparkrun status` is the answer to "what is resident".
+2. **Bench runs must be unmistakable.** Give every benchmark its own forked recipe with a
+   `bench-` prefixed `served_model_name` and a port in 9000–9099. `sparkrun benchmark <recipe>`
+   runs the whole cycle (run → benchmark → stop) — use it rather than hand-driving a serve, so
+   a bench workload cannot be left running. The gateway refuses to route to a `bench-` name.
+3. **A bench run must never evict the resident model** while anyone is connected. On one box a
+   benchmark and a live session are competing for the same memory and bandwidth, so the numbers
+   are wrong *and* the users are slowed.
 4. **First load of any model is far slower than the second** — sm_121 has no prebuilt kernels
-   and the Triton cache compiles cold. This is why `TRITON_CACHE_DIR` persists and the ready
-   timeout is raised (§2). It is not a hang; say so before someone kills it.
+   and the Triton cache compiles cold. This is why `TRITON_CACHE_DIR` persists across container
+   replacements and the ready timeout is raised (§2). It is not a hang; say so before someone
+   kills it. sparkrun's health check waits on the port and an HTTP probe, so let it wait.
 5. **Keep long-run scratch off `/tmp`** — systemd ages it, and a benchmark that lost its scratch
    mid-run produced 33 HTTP 500s that would have scored as wrong answers. Write results as
    `<name>.partial` and atomic-rename on completion; the scorer refuses `.partial`.
 6. **Record decode at t=0 and after ten minutes sustained, and publish both.** A desk box under
    sustained load throttles; a burst number alone misleads users.
-7. **After any agent or background run, check for orphans**: `pgrep -af 'vllm serve'` and
-   `docker ps`. A stray process holding unified memory blocks everyone.
+7. **After any agent or background run, check for orphans**: `sparkrun status`, then `docker ps`
+   for anything sparkrun did not start. A stray container holding unified memory blocks
+   everyone. Note that Ctrl+C on `sparkrun logs` detaches and leaves the workload serving — that
+   is the intended behaviour, and it is also how orphans happen if you assume otherwise.
+8. **Keep `earlyoom` enabled** (sparkrun's setup wizard installs it). On unified memory an
+   over-commit takes the machine down rather than the job; earlyoom is the backstop that kills a
+   process instead of letting the box wedge.
 
 ---
 
-## 6. Users and access
+## 6. What sparkrun does not do
+
+sparkrun launches workloads. It does not give clients a stable address, identify who is calling,
+record usage, or put a browser front end on the box. Those four are why the gateway exists, and
+they are the part of this service we build and maintain.
+
+| need | provided by |
+|---|---|
+| launch, stop, logs, status, health check, image and model distribution | sparkrun |
+| one fixed URL that survives a model swap | the gateway |
+| per-user identity, and refusing `bench-` backends | the gateway |
+| per-request usage capture for capacity | the gateway |
+| authenticated browser chat | Open WebUI |
+
+The gateway holds one fixed URL in front of whichever model is resident, captures each
+response's `usage` to a dated JSONL, and exposes a keyless TTL-cached `/status`
+(ready / loading / no_backend). When a swap happens the gateway follows it; **no client
+reconfigures.** That property is the entire reason a client can be configured once.
+
+---
+
+## 7. Users and access
 
 Three users. **Every listener binds `127.0.0.1`.** Browser access is over an SSH tunnel, and
 the tunnel is the entire security boundary — no LAN bind, no TLS, no auth proxy.
@@ -347,6 +380,10 @@ the tunnel is the entire security boundary — no LAN bind, no TLS, no auth prox
 ssh -N -L 3000:127.0.0.1:3000 -L 8421:127.0.0.1:8421 <user>@<spark-host>
 ```
 
+**Every published recipe sets `host: 0.0.0.0`, and so does vLLM when `--host` is unset.** A
+forked recipe must set `127.0.0.1` before it is ever run (§4.6). This is the single easiest way
+to breach the boundary above, and nothing in sparkrun will warn you.
+
 - **Open WebUI runs one instance with `WEBUI_AUTH=True` and three accounts.** Unauthenticated
   gives three people one shared chat history; three instances each hold their own embedding
   model in the shared pool.
@@ -355,13 +392,12 @@ ssh -N -L 3000:127.0.0.1:3000 -L 8421:127.0.0.1:8421 <user>@<spark-host>
 
 ---
 
-## 7. Clients
+### 7.1 Clients
 
-The gateway holds one fixed URL in front of whichever model is resident, captures each
-response's `usage` to a dated JSONL, and exposes a keyless TTL-cached `/status`
-(ready / loading / no_backend). Clients read three variables from `~/.ai-session/env`, mode 600
-— `AISESSION_BASE_URL`, `AISESSION_API_KEY`, `AISESSION_MODEL` — so no client config contains a
-path, a hostname, or a key.
+Clients read three variables from `~/.ai-session/env`, mode 600 — `AISESSION_BASE_URL`,
+`AISESSION_API_KEY`, `AISESSION_MODEL` — so no client config contains a path, a hostname, or a
+key. `AISESSION_MODEL` must match the recipe's `served_model_name`, which is where the served
+name is actually set.
 
 - **aider** needs a litellm metadata entry per served model or it mis-sizes prompts, with keys
   duplicated with and without the `openai/` prefix. Costs are zero.

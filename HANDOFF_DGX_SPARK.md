@@ -13,27 +13,33 @@ clients, MCP tools, and Service-Unit billing. It has been running long enough to
 for a large number of mistakes. **The mistakes are the valuable part of this handoff.** The
 Slurm machinery is not portable; the reasoning behind it is.
 
-Read this document end to end before writing anything. If you have the source repo mounted,
-read the files named in §1 as well — they are the primary sources and this document is a
-summary of them.
+Read this document end to end before writing anything. **The Spark cannot reach that
+filesystem**, so this file is self-contained: §3 and §7 carry the design and the incidents,
+and Appendix A carries the concrete artifacts — the serve invocation, the registry shape, the
+gateway contract, and the client configurations — that you would otherwise have read out of
+the repo.
 
 ---
 
-## 1. What to read in the source project
+## 1. You do not have the source project
 
-| file | what it gives you |
-|---|---|
-| `CLAUDE.md` | the shape your output should have: hard rules first, each with the reason it exists and the incident that produced it |
-| `ai-session/README.md` | the operator guide — layout, runtime environment, packaging, every component and why it exists |
-| `ai-session/server.py` | `MODEL_REGISTRY` / `PHASE1_SERVED` — the registry pattern, and ~90 lines of commentary recording why each model is in or out |
-| `ai-session/gateway.py` (header) | the stable-URL-over-ephemeral-backend design |
-| `ai-session/run_openwebui.sh` | the browser-chat client, private data dir, telemetry-off posture, opt-in external tools |
-| `ai-session/CODING_AGENTS.md` | the coding-client contract (aider, Continue, opencode) |
-| `tools/serve_cu129.sbatch` | the canonical serve invocation, and eight comment blocks each recording one production failure |
-| `docs/index.md`, `docs/coding/overview.md` | the user-facing framing: presets, not knobs |
-| `billing/su_formula.py`, `ai-session/BILLING_POLICY.md` | the accounting model (mostly *not* carried over — see §4) |
+`/project/rcc/mehta5/vllm` lives on the RCC cluster filesystem and is not mounted on the
+Spark. Do not write paths into the new `CLAUDE.md` that point at it, and do not plan any step
+that involves reading it.
 
-If you do not have the repo, §3 and §7 carry enough of the design to proceed.
+If the box has internet and you have credentials for it, the repository is on GitHub as
+`rmehta1987/rcc-vllm`, branch `milestone/model-refresh` — clone it if you can, since the file
+commentary is richer than any summary. **Ask the user before assuming it is reachable or
+public.** If you cannot clone it, proceed without it: nothing below depends on having it.
+
+What the source project is, in one paragraph: users load a module, type `ai-session chat`,
+`code`, or `fast`, and a preset submits a Slurm job that runs `vllm serve` on cluster GPUs.
+A long-lived reverse proxy on the login node gives clients one fixed URL regardless of which
+node the model landed on, captures per-request token usage, and exposes a keyless `/status`.
+Clients are Open WebUI in a browser, and aider / Continue / opencode for coding, each
+configured from three environment variables the CLI writes to `~/.ai-session/env`. Usage is
+charged in Service Units. Model choices are made by measurement against a frozen benchmark
+subset and recorded in the registry with their job IDs.
 
 ---
 
@@ -59,7 +65,7 @@ rules in the new `CLAUDE.md`:
 Seven load-bearing ideas. For each: why it exists, and what it becomes on the Spark. These
 are the ideas — do not copy the implementations.
 
-**1. A model registry with a served/not-served distinction.** `MODEL_REGISTRY` maps a stable
+**1. A model registry with a served/not-served distinction (shape in A2).** `MODEL_REGISTRY` maps a stable
 key to a path; `PHASE1_SERVED` is the subset users may actually start. The gap between them
 is deliberate and carries the reasons: one model is registered but unserved because its FP8
 weights need Hopper, another because its production serve path routes to an environment that
@@ -252,7 +258,7 @@ a Spark analogue; state them in the new file so they are not re-discovered.
 | Serve-time caches filled a 35 GB home quota and killed a load mid-profiling | point the vLLM compile cache, Triton cache, Torch/Inductor caches, HF cache, and FlashInfer workspace at explicit paths on the NVMe. Name them. Several of these do **not** honour `XDG_CACHE_HOME` |
 | Triton cache in a per-job temp dir meant recompiling every kernel; on an unfamiliar compute capability that blew the 600 s engine-ready timeout | sm_121 is exactly such an unfamiliar architecture. Make the Triton cache **persistent**, and raise `VLLM_ENGINE_READY_TIMEOUT_S` for first load per model. Expect the first load of any model to be dramatically slower than the second, and say so |
 | A concurrent job's cleanup deleted a running job's `TMPDIR`, killing FlashAttention after 27 of 60 problems and silently scoring 33 failures as wrong answers | namespace scratch per process, and make partial-result files distinguishable from complete ones. A truncated benchmark that scores as a bad model is worse than a crash |
-| The `hermes` tool-call parser silently fails on some models; the launcher routes `--tool-call-parser` and `--reasoning-parser` by model key | keep per-model parser routing in the registry. Silent tool-call failure is the most expensive bug in this stack because it looks like the model being stupid |
+| The `hermes` tool-call parser silently fails on some models; the launcher routes `--tool-call-parser` and `--reasoning-parser` by model key | keep per-model parser routing in the registry (A6). Silent tool-call failure is the most expensive bug in this stack because it looks like the model being stupid |
 | Enabling one model's "thinking" cost 5–12× tokens and wall time with no measured quality gain | on a bandwidth-starved box this is a 5–12× *latency* multiplier. Thinking off by default, opt-in per request, with the measured multiplier recorded |
 | `--enforce-eager` was a safety default; recovering CUDA graphs later gave 3.9× decode | do not leave `--enforce-eager` on as a permanent default. Record it as a temporary workaround with the condition for removing it, and re-test on every version bump |
 | One model ships an unused MTP draft head worth +53 % decode | **on the Spark this is not a footnote, it is a headline.** Speculative decoding and draft heads trade spare compute for memory bandwidth, which is precisely the trade this box wants. Any model with a draft head, and speculative decoding generally, should be evaluated early rather than left unused |
@@ -284,7 +290,7 @@ it is what a dedicated box is for: vLLM's offline `LLM()` API for batch jobs tha
 a server, guided/structured decoding for extraction pipelines, an embeddings endpoint, and
 MCP tools exposing the box's own state (resident model, free memory, thermals) to a coding
 agent — the same read-only, whitelisted-argv, no-shell security model as the source project's
-Slurm MCP server. Say which of these were actually verified and which are aspirational.
+Slurm MCP server (A7). Say which of these were actually verified and which are aspirational.
 
 ---
 
@@ -329,3 +335,189 @@ Do the parts that do not depend on the answers first. Ask when you reach the par
 Scientist-to-scientist prose. No checkmarks, no emoji, no marketing language. Numbered steps,
 exact commands, tables, and measured numbers with their provenance. Prefer deleting a
 paragraph to hedging it. State a constraint once, with its reason, and do not repeat it.
+
+---
+
+## Appendix A — the artifacts, extracted
+
+Everything here is copied from the source project so you do not need it mounted. It is
+reference material, not a template to port: read what each piece is *for*, then decide what
+the Spark version should be.
+
+### A1. The canonical serve invocation
+
+```
+vllm serve $MODEL_PATH \
+  --served-model-name $MODEL_KEY \
+  --host 0.0.0.0 --port $PORT \
+  --tensor-parallel-size $TP \
+  --trust-remote-code \
+  --enable-prefix-caching \
+  --max-model-len $MAX_MODEL_LEN \
+  --gpu-memory-utilization $GPU_MEM_UTIL \
+  $AGENT_FLAGS $REASONING_FLAG $EAGER_FLAG $COMPILATION_FLAG
+```
+
+`--enable-prefix-caching` is always on and matters more on the Spark than it did on the
+cluster: coding clients resend a large, mostly-identical prompt every turn, and prefill is
+the compute-bound half of a workload whose decode half is already bandwidth-starved.
+
+The serve argv is built **once** into an array and reused by the serve, smoke, and benchmark
+paths, specifically so those three cannot drift apart and produce numbers measured under
+different conditions. Keep that property.
+
+Environment that had to be set around the serve command, each line a fixed bug:
+
+```
+VLLM_CACHE_ROOT       compile cache -> large, must not sit on a quota'd home
+TRITON_CACHE_DIR      MUST persist across runs (see §7) -- not a temp dir
+TORCHINDUCTOR_CACHE_DIR, TORCH_EXTENSIONS_DIR, TORCH_HOME
+XDG_CACHE_HOME
+FLASHINFER_WORKSPACE_BASE   FlashInfer ignores XDG and defaults to $HOME
+HF_HOME               model/tokenizer cache
+VLLM_ENGINE_READY_TIMEOUT_S=2400   default 600 is not enough for a cold Triton cache
+                                   on a compute capability with no prebuilt kernels
+```
+
+### A2. The registry shape
+
+```python
+MODELS_ROOT = "..."
+
+MODEL_REGISTRY = {                       # key -> path. The key is the stable identifier
+    "qwen2.5_72B": f"{MODELS_ROOT}/...", # used in the served-model-name, the rate table,
+    "qwen3.8_27B": f"{MODELS_ROOT}/...", # the usage logs, and the client configs.
+    "qwen3.5_122B": f"{MODELS_ROOT}/...",  # registered but NOT served -- reason in a comment
+    "qwen2.5_0.5B": f"{MODELS_ROOT}/...",  # smoke only, never a benchmark reference
+}
+
+PHASE1_SERVED = {"qwen2.5_72B", "qwen3.8_27B", "gemma4_31B", "qwen3_4b"}
+```
+
+The value is in the comments, not the code. A real entry's commentary records: the measured
+score that justified it (`50.00% (30/60) vs 26.67% (16/60), +23.33 pts, score job 53531932`),
+the exact hardware and parallelism it was proven on, which tool-call parser works and which
+one *silently* fails on it, whether thinking is on by default and what that costs, and what
+measurement is still owed. Anything registered-but-unserved says why in the same place —
+"FP8 weights, needs Hopper", "the production serve path cannot load this architecture" — so
+nobody re-litigates a settled question. Write the Spark's registry the same way, with the
+reasons being memory footprint and measured decode rate.
+
+### A3. The gateway contract
+
+One fixed URL in front of a backend that moves. The current backend is written to
+`logs/gateway/upstream.json` when a session starts and cleared when it ends; the proxy
+re-reads that file with an mtime cache, so it needs no restart to follow a new backend.
+
+- Proxies verbatim: `/v1`, `/metrics`, `/health`, `/version`, `/ping`, `/tokenize`,
+  `/detokenize`, `/pooling`. Drops hop-by-hop and length headers in both directions.
+- Captures every response's `usage` block to `logs/gateway/usage-YYYYMMDD.jsonl`. This is the
+  authoritative usage record — users never log their own tokens.
+- `GET /status` is **keyless** and TTL-cached, returning ready / loading / no_backend, so a
+  status check cannot fan out into a storm of backend health probes.
+- Per-client token-bucket rate limit (default 30 rps, `429` with `Retry-After`) and a request
+  body cap (default 16 MB, `413`), both disableable by setting their env var to `<= 0`.
+- Optional API key; clients send it as the OpenAI API key.
+
+On the Spark the moving part is the resident model rather than the address, but the usage
+capture, the keyless `/status`, and the body cap all keep their value. The `/status` verb is
+what the CLI shows users instead of raw scheduler output.
+
+### A4. The user-facing CLI surface
+
+```
+ai-session chat      general chat in the browser
+ai-session code      coding session for aider / Continue / opencode
+ai-session fast      small, cheap, quick to start
+ai-session status    ready, still loading, or stopped?
+ai-session connect   client settings: URL, access key, per-client commands
+ai-session env       prints `export AISESSION_...` lines; use as eval "$(ai-session env)"
+ai-session models    list the presets
+ai-session receipt   re-print the newest usage receipt
+ai-session mcp config | mcp run NAME
+ai-session stop      stop, free the GPUs, print the charge
+```
+
+After a session comes up, the dispatcher writes `~/.ai-session/env`, mode 600, containing
+exactly three variables: `AISESSION_BASE_URL`, `AISESSION_API_KEY`, `AISESSION_MODEL`. Every
+client and example reads those instead of a hand-edited value, which is why no client config
+in the project contains an install path or a hostname. Preserve this — it is the single
+highest-leverage piece of UX in the source project and it costs almost nothing.
+
+### A5. Browser chat (Open WebUI)
+
+Runs in its **own** virtual environment, never the serving one, and points at the gateway so
+it needs no reconfiguration when the backend changes:
+
+```
+ENABLE_OPENAI_API=True
+OPENAI_API_BASE_URL=http://localhost:$GW_PORT/v1
+OPENAI_API_KEY=<session key>
+ENABLE_OLLAMA_API=False
+DATA_DIR=$HOME/.ai-session/openwebui-data     # chat history: PRIVATE, mode 700
+HF_HOME=<per-user state dir>/hf_cache          # UI writes here; never the shared install
+ANONYMIZED_TELEMETRY=False  DO_NOT_TRACK=true  SCARF_NO_ANALYTICS=true
+WEBUI_AUTH=False                               # demo posture only -- see §9.1
+```
+
+Two details worth carrying: the chat database was originally in a group-readable project
+tree, where any other user could read someone's chats — it belongs in a mode-700 directory
+under `$HOME`. And the RAG embedding model (`all-MiniLM-L6-v2`) is resolved from a shared
+read-only cache with `HF_HUB_OFFLINE=1` when present, because letting every user download it
+into an empty cache on first run was slow enough to overrun the UI's bind-wait.
+
+Web search, URL fetch, and academic paper search are **opt-in** behind one environment
+variable, default off, because their queries leave the machine. That is stated plainly in the
+user docs rather than buried.
+
+### A6. The coding-client contract
+
+- **Per-model tool-call parser routing**, by model key, in the launcher:
+  `gemma4* -> gemma4`, `qwen3.5*|qwen3.6*|qwen3.8* -> qwen3_coder`, older Qwen -> `hermes`.
+  Tool calling is only enabled in agent mode: `--enable-auto-tool-choice --tool-call-parser X`.
+  The wrong parser fails *silently* — the model appears stupid rather than broken.
+- **Reasoning parser routing** likewise (`qwen3`, `gemma4`), so chain-of-thought comes back in
+  a separate `reasoning` field instead of contaminating `content`. With a parser on and a
+  tight `max_tokens`, `content` can come back null while the model is still thinking —
+  budget tokens generously or disable thinking.
+- **aider** needs a litellm metadata file declaring the context window, or it warns
+  "Unknown context window size" and mis-sizes prompts. Keys must be duplicated with and
+  without the `openai/` prefix. Costs are zero there because billing happens elsewhere; on
+  the Spark they are genuinely zero. Split the window so prompt + `max_tokens` cannot exceed
+  `--max-model-len` (28000 in / 4096 out against a 32768 window).
+- **opencode** needs a project-local config declaring a custom provider:
+
+```json
+{
+  "model": "rcc/<model_key>",
+  "share": "disabled",
+  "autoupdate": false,
+  "provider": { "rcc": {
+    "npm": "@ai-sdk/openai-compatible",
+    "options": { "baseURL": "{env:AISESSION_BASE_URL}", "apiKey": "{env:AISESSION_API_KEY}" },
+    "models": { "<model_key>": { "limit": { "context": 32768, "output": 8192 } } }
+  }}
+}
+```
+
+- Client telemetry is disabled by name in each: aider `--analytics-disable`, Continue
+  `allowAnonymousTelemetry: false`, opencode `share: disabled` and `autoupdate: false`. The
+  docs state that the coding tool is separate software with its own telemetry, outside the
+  service's control — an honest boundary rather than a blanket privacy claim.
+
+### A7. MCP tools, and their security model
+
+Two read-only MCP servers let a coding agent answer "what are my jobs doing?" and "how much
+have I used?" without being handed a shell. The security model is enforced in code, not by
+convention, and is the part to carry:
+
+- a hard whitelist of binaries, checked on every call;
+- every command built as an argv list, `shell=False`, so no argument is ever shell-interpreted;
+- arguments constrained by regex (`^[0-9_]+$` for a job id, so `"1; scancel 999"` is refused
+  before any process spawns);
+- ownership verified before returning anything;
+- no mutating verb reachable at all.
+
+They live in a **dedicated virtual environment**, deliberately not the serving one, so the
+MCP SDK's dependency tree can never perturb vLLM. The Spark analogue exposes box state —
+resident model, free unified memory, temperature, disk — under the same rules.

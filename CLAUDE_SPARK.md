@@ -80,7 +80,7 @@ Three consequences:
 ### 1.4 What this rules out
 
 - **Serving BF16 weights of any dense 27–31B model.** 55–63 GB read per token is a 4.4–4.9
-  tok/s ceiling against 11.5 measured at 4-bit. Registered, never served (§3.1).
+  tok/s ceiling against 11.5 measured at 4-bit. Do not register a BF16 checkpoint as served.
 - **Tensor parallelism.** One GPU. Any `--tensor-parallel-size` above 1 is a bug, and there is
   no second box — do not add the flag "for later".
 - **A second concurrently-serving model** (§5.3), and **any LAN-bound listener** (§6).
@@ -103,7 +103,14 @@ that this tag carries sm_121 kernels. Confirm at first load: the startup log mus
 Marlin/W4A16 kernel, with no "no kernel image is available" error and no PTX JIT-fallback
 warning.
 
-**v0.27.1 is a floor, not a preference.** The default model loads as
+Two alternatives exist and may be better: the vLLM recipe names a fork build
+`vllm/vllm-openai:qwen38`, and the NVFP4+DSpark reference recipe uses a GB10-specific
+community image, `ghcr.io/drowzeys/keys-vllm-027-gb10-qwen38`. NVIDIA's Spark playbook
+specifies **CUDA 13.0**, which the cu129 tag above does not match — settle this before pinning.
+
+`Qwen3_5ForConditionalGeneration` is registered from vLLM 0.17.0 onward, so that is the
+architecture floor; the higher pin is about kernels and speculative-decoding fixes, not the
+architecture. The default model loads as
 `Qwen3_5ForConditionalGeneration`, an architecture absent from older vLLM.
 
 **Never `pip install -r requirements.txt` into the serving environment.** It clobbers the
@@ -119,6 +126,7 @@ TORCHINDUCTOR_CACHE_DIR, TORCH_EXTENSIONS_DIR, TORCH_HOME, XDG_CACHE_HOME
 FLASHINFER_WORKSPACE_BASE=/opt/spark-ai/cache/flashinfer   # ignores XDG; defaults to $HOME
 HF_HOME=/opt/spark-ai/hf
 VLLM_ENGINE_READY_TIMEOUT_S=2400                # 600 is not enough for a cold Triton cache
+FLASHINFER_CUDA_ARCH_LIST=12.1a                 # GB10's arch string, per the reference recipe
 ```
 
 ---
@@ -136,7 +144,8 @@ a run id (§9).
 | `qwen3.8_27B` | `unsloth/Qwen3.8-27B-NVFP4` | 23.4 GB | 11.7 (**measured 11.5**) | **served — default** |
 | `nemotron_30b_a3b` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` | 21.6 GB | range (§1.3) | served — fast alt; **coding quality unmeasured**, which is what would justify promoting it |
 | — draft | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark` | 1.3 GB | — | draft for the above |
-| `gemma4_31B` | `google/gemma-4-31B-it-qat-w4a16-ct` | 23.3 GB | 11.7 | served — second coding option |
+| `gemma4_31B` | `nvidia/Gemma-4-31B-IT-NVFP4` | — | ~9 measured elsewhere | served — second coding option; NVIDIA's own NVFP4, and the build in NVIDIA's Spark support matrix |
+| — drafter | `Doopeworld/Qwen3.8-27B-DSpark-vLLM` | 2.7 GB | — | DSpark drafter for the **default** (§4.5) |
 
 ### 3.2 Quantization on this GPU
 
@@ -144,8 +153,8 @@ a run id (§9).
 |---|---|---|---|
 | NVFP4 (W4A16) | 4-bit | 16-bit | `UNVERIFIED` — `vllm serve` the default and read the kernel line at startup |
 | compressed-tensors w4a16 | 4-bit | 16-bit | `UNVERIFIED` — same, with `gemma4_31B` |
-| FP8 | 8-bit | 8/16-bit | known to wedge under load (§3.1) |
-| NVFP4 W4A4 | 4-bit | **4-bit** | `UNVERIFIED` — likely unsupported on a W4A16 path |
+| FP8 | 8-bit | 8/16-bit | wedged under concurrent deep-context load where NVFP4 did not (field report) — the *official* sparkrun recipe for this model is FP8, so prefer the NVFP4 recipe in §4.6 |
+| NVFP4 W4A4 | 4-bit | **4-bit** | `UNVERIFIED` — GB10 computes W4A16 via Marlin; there is no native FP4 tensor-core path here, so a W4A4 recipe may not dispatch |
 
 ---
 
@@ -218,25 +227,81 @@ build is unconfirmed — check the startup log on first serve and record it. Two
 
 ### 4.5 Speculative decoding is mandatory, and the mechanism differs per model
 
-Worth ~2.3× single-stream on this box. **A deployment that skips it hands back more than half
-the interactive speed.**
+Without it the default decodes ~11.5 tok/s (measured). The reference NVFP4 recipe for this
+exact checkpoint (§4.6) **targets ~75 tok/s single-stream** with a DSpark drafter. That is the
+single largest lever on this box — larger than the choice between any two checkpoints.
 
-- **Default** — in-checkpoint **MTP head**. Verified present: the checkpoint's safetensors
-  index carries 15 `mtp.*` tensors, the same set as its BF16 parent. Configure with
-  `--speculative_config` using an MTP method. `UNVERIFIED`: settle the syntax from the pinned
-  build's `--help` at install (`num_nextn_predict_layers` is absent from config — the head is
-  carried as tensors). **If the build exposes no MTP method, STOP and record it — do not
-  quietly serve without speculative decoding.**
-- **Fast alternative** — external draft: `--speculative_config.model <DSpark checkpoint>` with
-  `--speculative_config.num_speculative_tokens 3`.
-- **Do not cross these.** Pointing the Nemotron draft at the Qwen target is a vocabulary
-  mismatch.
-- **The 2.3× is motivation, not a target.** Ollama ran its own quantized artifact, so the gap
-  bundles runtime and checkpoint differences. Realized vLLM gain here is `UNVERIFIED`.
-- **Open vLLM issue #46249** reports tool calls failing with MTP enabled on the **Responses
-  API**, on a different Qwen model. Our clients use `/v1/chat/completions`, so it may not apply:
-  enable speculative decoding, smoke-test tool calls on that surface with it **on**, and record
-  the result and the fallback condition rather than pre-emptively disabling it.
+**Default (`qwen3.8_27B`) — two options, both valid:**
+
+```
+# In-checkpoint MTP head. 15 mtp.* tensors are present in the checkpoint.
+--speculative-config '{"method":"mtp","num_speculative_tokens":3}'
+
+# External DSpark drafter (2.7 GB, 1.36B params, 5-layer DFlash + Markov head).
+# k=14 for single-stream latency (~75 tok/s); k=7 for aggregate throughput.
+--speculative-config '{"method":"dspark","model":"Doopeworld/Qwen3.8-27B-DSpark-vLLM",\
+                       "num_speculative_tokens":14,"draft_sample_method":"probabilistic"}'
+```
+
+**`num_speculative_tokens` must be spelled out for MTP.** vLLM reads `mtp_num_hidden_layers`
+from the top-level config, but this checkpoint carries it only under `text_config`, so the
+depth cannot be inferred — omit it and startup fails.
+
+**DSpark forces the FLASH_ATTN backend, which rejects an fp8 KV cache.** Set
+`--kv-cache-dtype bfloat16` explicitly when using it, or the serve dies with "Selected backend
+FLASH_ATTN is not valid… kv_cache_dtype not supported". Every other recipe on the shelf sets
+`--kv-cache-dtype fp8`; copying that setting into a DSpark serve is the obvious wrong move.
+The drafter plus a bf16 KV cache also costs memory — the reference recipe runs
+`--gpu-memory-utilization 0.55`, not the 0.8–0.88 the fp8-KV recipes use.
+
+**Fast alternative (`nemotron_30b_a3b`)** uses its own external draft, `…-NVFP4-DSpark`, at
+`num_speculative_tokens: 3`. **Do not cross the drafters** — each is trained against its own
+target, and a mismatch is a vocabulary error.
+
+Measured MTP acceptance for the default's family, from the vLLM recipe: 92.2 % (BF16), 84.8 %
+(FP8), 81.5–84.8 % (NVFP4).
+
+**Two things to confirm at install**, both `UNVERIFIED`: that the pinned build carries the
+gated-delta-net speculative fix (vllm-project/vllm#51812, #51674 — the vLLM recipe notes no
+released tag had it), and open issue **#46249**, which reports tool calls failing with MTP on
+the **Responses API** for a different Qwen model. Our clients use `/v1/chat/completions`, so it
+may not apply — enable speculative decoding, smoke-test tool calls with it **on**, and record
+the result rather than pre-emptively disabling it.
+
+### 4.6 Start from a published recipe, never from scratch
+
+Three registries carry configurations for these models; none of their defaults are safe here
+unquestioned, but their flags encode work you should not redo.
+
+| source | what it has | caveat |
+|---|---|---|
+| `spark-arena/recipe-registry` | the *official* Spark recipe for this model family — but **FP8**, not NVFP4 | FP8 is the precision that wedged (§3.2) |
+| `styles01/sparkrun-recipes` | `qwen-38-27b-nvfp4-dspark.yaml` — **our exact checkpoint**, NVFP4 + DSpark, GB10-tuned | third-party; container is a community GB10 build |
+| `Avarok-Cybersecurity/atlas-recipes` | `gemma-4-31b-nvfp4.yaml` on `nvidia/Gemma-4-31B-IT-NVFP4` | runs the `atlas` runtime, not vLLM — take the model choice, not the launcher |
+| `vllm-project/recipes` | `models/Qwen/Qwen3.8-27B.yaml` — per-variant VRAM, all three spec-decode modes, measured acceptance | its verified-hardware list covers GB300 and RTX 5090; **GB10 is deliberately absent** |
+| `NVIDIA/dgx-spark-playbooks` | Spark playbooks for vLLM, Open WebUI, coding agents, NVFP4 quantization, multi-Spark | its model support matrix does not list this model |
+
+**Every one of these defaults to `host: 0.0.0.0`.** So does vLLM when `--host` is unset. §6
+forbids it. Take a recipe's flags; never run one verbatim.
+
+---
+
+## 4.7 Launching: sparkrun
+
+`sparkrun` launches, manages and stops inference workloads on one or more DGX Sparks with no
+scheduler. Prefer it to a bespoke launcher — it already covers run, logs, stop, status and
+multi-node parallelism, and detaching from logs does not kill the job.
+
+```bash
+uvx sparkrun setup                 # wizard: cluster, SSH mesh, ConnectX-7, sudoers, earlyoom
+sparkrun run <recipe>              # launch
+sparkrun logs|stop|status <recipe> # manage; Ctrl+C detaches, it does not kill
+```
+
+External registries attach through a `.sparkrun/registry.yaml`, which is how the NVFP4 recipes
+in §4.6 are reachable. **Fork the recipe rather than using it unmodified**: at minimum set
+`host: 127.0.0.1` (§6) and replace `gpu_memory_utilization` with the budget derived in §1.1.
+Keep the fork in this repo so the served configuration is versioned with the rules.
 
 ---
 
@@ -331,7 +396,8 @@ MCP SDK's dependencies cannot perturb vLLM.
   on-box number cites a manifest id; every off-box number cites its source and date.** No number
   in this file cites a manifest id yet, because none was measured here.
 - **Whenever two numbers appear together, so do the conditions they were measured under.** The
-  50.00 / 66.67 comparison above is why.
+  two coding scores in §3.1 are why: they were measured on the BF16 parents, elsewhere, with
+  thinking disabled — which is Gemma's native default but suppresses Qwen's.
 - Partial result files must be distinguishable from complete ones. A truncated benchmark that
   scores as a bad model is worse than a crash.
 - **Commit evidence out of `_evidence/` before deleting any weights it describes.** Weights are

@@ -1,49 +1,66 @@
 # Project rules — DGX Spark LLM service
 
-A single-box vLLM service: three users, one GB10 GPU, models served over an OpenAI-compatible
-API to a browser client and three coding clients. Nothing on the serving path leaves this
-machine.
+A vLLM service on one GB10 GPU, served over an OpenAI-compatible API to a browser client and
+three coding clients. Nothing on the serving path leaves this machine.
 
-**Every hardware number below is `UNVERIFIED` — this file was written off-box.** Each carries
-the command that settles it. Run them before relying on anything here, and replace the number
-*and* the marker in the same edit.
+**The box is shared.** This project is one tenant among several in `spark-users`, not the owner
+of the machine. Rules that read like conventions — one resident model, the `bench-` prefix, the
+port ranges — bind us and cannot bind anyone else, so treat the GPU and the memory pool as
+contended at all times.
+
+Hardware values in §1.1 are **measured** as of 2026-08-26. Everything still marked `UNVERIFIED`
+carries the command that settles it; when you settle one, replace the number *and* the marker in
+the same edit.
 
 ---
 
 ## 1. Hardware reality
 
-### 1.1 Memory budget — in gigabytes, and it comes first
+### 1.1 The platform — verified 2026-08-26
 
-Unified memory is not VRAM. `--gpu-memory-utilization` is a fraction of the pool the OS, the
-desktop session, Open WebUI and the gateway are also using. On a discrete GPU an over-commit
-kills the job; here it causes system-wide pressure and OOM-killed processes. **vLLM's ordinary
-0.9 default is unsafe on this box.**
+| | verified value | re-check with |
+|---|---|---|
+| GPU | **NVIDIA GB10, 1 GPU, compute cap 12.1 (sm_121)**, driver 580.159.03 | `nvidia-smi --query-gpu=name,compute_cap,driver_version --format=csv` |
+| CUDA | **13.0** (nvcc 13.0.88; driver reports 13.0) — matches the §2 target | `nvcc --version` |
+| memory | **121 GB unified, one pool shared with the OS.** `nvidia-smi` reports FB Memory `N/A`, confirming there is no separate VRAM | `free -g`; `nvidia-smi -q -d MEMORY` |
+| CPU | **20-core Arm Cortex-X925, aarch64** | `nproc`; `uname -m` |
+| OS | **DGX OS on Ubuntu 24.04.4** (`DGX_NAME="DGX Spark"`), host `spark-2500`, Docker present | `cat /etc/dgx-release`; `docker info` |
+| disk | **3.7 TB NVMe, 2.4 TB free**; weights live in `/data/models/vllm/` | `df -h /` |
+| bandwidth | ~273 GB/s vendor spec — **`UNVERIFIED`** | no read-only probe; run a STREAM-class microbenchmark and record it |
 
-- **Placeholder budget: 100 GB serve / 20 GB OS floor / 8 GB margin.** `UNVERIFIED`, derived
-  from 128 GB × 0.85 ≈ 108 then held back further. **Do not allocate against it** — it is a
-  stand-in until the derivation below has been run.
-- Derive the real numbers: `budget = free unified memory − OS floor − margin`, measured with
-  **Open WebUI and the gateway already resident**, not on an idle box.
-  ```bash
-  systemctl --user start ai-gateway open-webui   # bring the resident services up first
-  free -g                                        # then read the pool
-  ```
+**This is a shared multi-user box.** Several people in the `spark-users` group hold sessions and
+can start their own serves outside this project's conventions (§5.8). Never assume the GPU or
+the memory pool is yours alone — check before allocating.
+
+### 1.2 Memory budget — in gigabytes, and it comes first
+
+Unified memory is not VRAM. `--gpu-memory-utilization` is a fraction of a pool the OS, the
+desktop session, Open WebUI and the other resident containers are also using. On a discrete GPU
+an over-commit kills the job; here it causes system-wide pressure and OOM-killed processes.
+**vLLM's ordinary 0.9 default is unsafe on this box.**
+
+Measured baseline, 2026-08-26, with `spark-open-webui`, `spark-ollama` and `geoagent-postgis`
+resident and **no model loaded**:
+
+```
+total 121 GB   available 115 GB
+```
+
+Derive the serve budget from a live reading, not from this one: `budget = MemAvailable − OS
+floor − margin`, measured with the resident services **already up**, never on an idle box.
+
+- **Take a share, not the pool.** 115 GB available does not mean 115 GB is yours — others in
+  `spark-users` can start a serve while yours is running. Decide the share this project claims,
+  write it here as a number, and size every recipe against that rather than against
+  `MemAvailable` at the moment you happen to look.
 - Prefer `--kv-cache-memory` (absolute) to `--gpu-memory-utilization` (fraction) wherever the
   pinned build supports it. If it does not, compute the fraction as `budget ÷ total pool` and
   record it — never fall back to a default.
 - A preflight must fail before loading weights unless `MemAvailable` ≥ weights bytes +
   `--kv-cache-memory` + 5 GB, printing all three terms. Do not let a load OOM the box.
-
-### 1.2 The platform
-
-| assumed | verify with |
-|---|---|
-| GB10 Grace-Blackwell, one GPU, sm_121 | `nvidia-smi --query-gpu=name,compute_cap,memory.total --format=csv` |
-| 128 GB LPDDR5X unified, **shared with the OS** | `free -g`; `nvidia-smi -q -d MEMORY` — same pool? |
-| ~273 GB/s memory bandwidth (vendor spec) | no read-only probe exists; run a STREAM-class microbenchmark and record it |
-| 20-core Arm, **aarch64** | `uname -m` |
-| DGX OS, container runtime present, **CUDA 13.0** | `cat /etc/os-release`; `docker info`; `nvcc --version` |
-| ~4 TB NVMe | `df -h` — the weights budget is whatever is actually free |
+- The three served checkpoints total ~68 GB at 4-bit, which **fits inside 121 GB** — so
+  co-residency is arithmetically possible and still forbidden (§5.1), and on a shared box the
+  reason is stronger: memory you hold is memory another user cannot.
 
 ### 1.3 Decode is bandwidth-bound
 
@@ -108,7 +125,7 @@ Known images, none of them yet confirmed on this box:
 | `ghcr.io/drowzeys/keys-vllm-027-gb10-qwen38` | the NVFP4+DSpark reference recipe | **GB10-specific**, and the only one built for this hardware |
 | `ghcr.io/spark-arena/dgx-vllm-eugr-nightly` | the official Spark recipe | community nightly |
 | `vllm/vllm-openai:qwen38` | vLLM's own recipe for this model | a fork build in the 0.27 range |
-| `vllm/vllm-openai:v0.27.1-aarch64-cu129-ubuntu2404` | upstream stable | published `linux/arm64`, but **cu129, not CUDA 13** |
+| ~~`vllm/vllm-openai:v0.27.1-aarch64-cu129-ubuntu2404`~~ | upstream stable | **ruled out** — cu129 against a CUDA 13.0 host (§1.1) |
 
 Start from the GB10-specific one, since the reference recipe's ~75 tok/s target was measured
 with it. `UNVERIFIED` for whichever you pick: that it carries sm_121 kernels. Confirm at first
@@ -128,11 +145,12 @@ Cache and workspace paths — each line is a bug someone already paid for. Mount
 host so they survive a container replacement:
 
 ```
-VLLM_CACHE_ROOT=/opt/spark-ai/cache/vllm        # compile cache; large, keep on NVMe
-TRITON_CACHE_DIR=/opt/spark-ai/cache/triton     # MUST persist across runs -- never a temp dir
+VLLM_CACHE_ROOT=/data/cache/vllm        # compile cache; large, keep on NVMe
+TRITON_CACHE_DIR=/data/cache/triton     # MUST persist across runs -- never a temp dir
 TORCHINDUCTOR_CACHE_DIR, TORCH_EXTENSIONS_DIR, TORCH_HOME, XDG_CACHE_HOME
-FLASHINFER_WORKSPACE_BASE=/opt/spark-ai/cache/flashinfer   # ignores XDG; defaults to $HOME
-HF_HOME=/opt/spark-ai/hf                        # sparkrun syncs models here; keep one copy
+FLASHINFER_WORKSPACE_BASE=/data/cache/flashinfer   # ignores XDG; defaults to $HOME
+HF_HOME=/data/models/vllm                       # where weights already live; keep ONE copy
+                                                # -- 2.4 TB free, but it is shared with other users
 VLLM_ENGINE_READY_TIMEOUT_S=2400                # 600 is not enough for a cold Triton cache
 FLASHINFER_CUDA_ARCH_LIST=12.1a                 # GB10's arch string, per the reference recipe
 ```
@@ -343,9 +361,23 @@ discipline **around** it, not a replacement for it.
    for anything sparkrun did not start. A stray container holding unified memory blocks
    everyone. Note that Ctrl+C on `sparkrun logs` detaches and leaves the workload serving — that
    is the intended behaviour, and it is also how orphans happen if you assume otherwise.
-8. **Keep `earlyoom` enabled** (sparkrun's setup wizard installs it). On unified memory an
-   over-commit takes the machine down rather than the job; earlyoom is the backstop that kills a
-   process instead of letting the box wedge.
+8. **Coexist with the other tenants.** Everything above binds this project and nobody else —
+   a `bench-` name and a 9000-range port stop *us* from confusing a benchmark for production,
+   and stop no one in `spark-users` from doing anything. So before every load, look:
+   ```bash
+   nvidia-smi --query-compute-apps=pid,used_memory --format=csv   # who holds the GPU
+   free -g                                                        # what is actually available
+   docker ps --format '{{.Names}}\t{{.Image}}'                    # whose containers are up
+   sparkrun status                                                # ours specifically
+   ```
+   If another tenant has the memory committed, wait or ask — do not force the load. An OOM here
+   lands on the whole machine, so the cost of being wrong is someone else's work, not just ours.
+   Announce swaps and long benchmarks rather than surprising people with them.
+9. **Keep `earlyoom` enabled.** On unified memory an over-commit takes the machine down rather
+   than the job; earlyoom is the backstop that kills a process instead of letting the box wedge.
+   Installing it needs root, which this project does not have — check whether it is already
+   running (`systemctl status earlyoom`) and, if not, ask the box's admin. Until it is, §1.2's
+   preflight is the **only** guard between a bad `--kv-cache-memory` and everyone's session.
 
 ---
 
@@ -381,14 +413,15 @@ Two operational facts to know before relying on it:
 |---|---|
 | launch, stop, logs, status, health, image and model distribution | sparkrun |
 | one fixed URL that survives a swap; model aliases; discovery | `sparkrun proxy` |
-| **per-user identity** — three users behind one shared token | **not provided** (§7) |
+| **per-user identity** — our users behind one shared token | **not provided** (§7) |
 | **per-user usage capture** for capacity | **not provided** — needs the DB LiteLLM wants |
 | **authenticated browser chat** | Open WebUI (§7) |
 
-Three users behind a single `--master-key`, with per-user Open WebUI accounts, is defensible
-given the tunnel is already the security boundary — but it means **usage logs cannot attribute
-a request to a person**, and §9's tracked run ids carry that load instead. Decide it explicitly
-rather than by default.
+A single `--master-key` with per-user Open WebUI accounts is defensible given the tunnel is
+already the security boundary — but it means **usage logs cannot attribute a request to a
+person**, and §9's tracked run ids carry that load instead. Note the key is only as private as
+the box: anyone in `spark-users` who can read the proxy's config or process list can read it, so
+it authenticates the service, not the human. Decide this explicitly rather than by default.
 
 ### Recipe trust
 
@@ -408,8 +441,10 @@ The NVFP4 recipes in §4.6 come from third-party registries. Fork them deliberat
 
 ## 7. Users and access
 
-Three users. **Every listener binds `127.0.0.1`.** Browser access is over an SSH tunnel, and
-the tunnel is the entire security boundary — no LAN bind, no TLS, no auth proxy.
+**Every listener binds `127.0.0.1`.** Browser access is over an SSH tunnel, and the tunnel is
+the entire security boundary — no LAN bind, no TLS, no auth proxy. On a shared box `127.0.0.1`
+is a weaker boundary than it sounds: it excludes the network, not the other users logged into
+this machine. Anything genuinely private needs file permissions, not just a loopback bind.
 
 ```bash
 # 3000 = Open WebUI, 4000 = sparkrun proxy (vLLM itself stays on 8000, unexposed)
@@ -423,7 +458,7 @@ to breach the boundary above, and nothing in sparkrun will warn you.
 - **Open WebUI runs one instance with `WEBUI_AUTH=True` and three accounts.** Unauthenticated
   gives three people one shared chat history; three instances each hold their own embedding
   model in the shared pool.
-- **The proxy runs with `--master-key`**, shared across the three users (§6). Per-user Open
+- **The proxy runs with `--master-key`**, shared across our users (§6). Per-user Open
   WebUI accounts are the practical substitute for per-user identity.
 - Chat history lives in a mode-700 directory under `$HOME`.
 

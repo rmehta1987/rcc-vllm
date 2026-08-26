@@ -21,6 +21,52 @@ the repo.
 
 ---
 
+## 0. Execution contract
+
+**Produce exactly one file: `CLAUDE.md`, at the root of the new Spark repository.** Nothing
+else is in scope. Specifically:
+
+| you MUST | you MUST NOT |
+|---|---|
+| run the read-only verification commands in §5 and record their real output | install vLLM, Docker images, or any package |
+| look up the two models' checkpoint metadata (§9.5) to size them | download model weights |
+| write the file, and report which numbers are measured vs `UNVERIFIED` | start `vllm serve`, Open WebUI, or any long-running process |
+| ask the user at the STOP conditions below | write code, launchers, or install scripts |
+| | commit or push anything unless the user asks |
+
+You are writing the rules that govern the install, not performing it. If a step tempts you to
+"just check whether it works" by loading a model, that is out of scope — write the check into
+`CLAUDE.md` as a rule instead.
+
+### Order of work
+
+1. Read this document end to end.
+2. Run §5's verification commands. Record actual output; do not paraphrase it.
+3. Resolve the model identities in §9.5 — exact repository id, parameter count, dtype, and
+   whether a quantized checkpoint exists. **STOP condition 1** applies here.
+4. Compute the memory budget (§5a) and the decode ceilings (§5b) from *your* measured
+   numbers, not from this document's examples.
+5. Draft `CLAUDE.md` against the outline in §8, incorporating §6's rules, §7's incidents, and
+   §9's decisions.
+6. Self-check against §10 and report.
+
+### STOP conditions — ask the user, do not guess
+
+1. **The named model does not resolve, or does not fit.** "Qwen 3.8 Max" is not a checkpoint
+   this project has ever served (§9.5). If you cannot pin it to a specific repository, or if
+   the pinned checkpoint exceeds the memory budget even quantized, stop and report the sizing
+   arithmetic rather than substituting a different model.
+2. **§5's measured hardware contradicts §5's assumed table** — different memory size,
+   different compute capability, no container runtime. The design consequences in §5a–c are
+   derived from those specs; if they are wrong, the rules built on them are wrong.
+3. **You are not on the Spark.** Then no number can be measured. Write the file with every
+   number marked `UNVERIFIED`, list the commands that would settle each, and say so in your
+   summary. Do not silently promote an assumption to a fact.
+4. **You cannot reach the source repository** and something in Appendix A is ambiguous enough
+   that guessing would change a rule. Ask rather than invent.
+
+---
+
 ## 1. You do not have the source project
 
 `/project/rcc/mehta5/vllm` lives on the RCC cluster filesystem and is not mounted on the
@@ -84,9 +130,12 @@ observability*, and it should be justified that way in the new file, not by inhe
 
 **3. Presets, not knobs.** Users type `ai-session chat` / `code` / `fast`; the preset picks
 the model, GPU count, and parallelism. Nobody configures tensor parallelism by hand. *On
-Spark:* preserve exactly. The knobs that remain are memory split and quantization, which are
-more dangerous than TP was — a bad `--gpu-memory-utilization` on unified memory takes the
-desktop down, not just the job (§5).
+Spark:* preserve the **principle**, not the preset list — there are two models now (§9.5) and
+one GPU, so a three-preset menu over two models would be theatre. Define presets that name a
+real distinction, and if a preset would only ever pick the same model as another, do not
+create it. Parallelism disappears as a knob entirely (TP=1). The knobs that remain are memory
+budget and quantization, which are more dangerous than TP ever was — a bad
+`--gpu-memory-utilization` on unified memory takes the desktop down, not just the job (§5a).
 
 **4. One session at a time, and something that reclaims it.** The source project enforces one
 session per user and runs an idle reaper because idle GPUs are billed. *On Spark:* nothing is
@@ -140,9 +189,10 @@ will otherwise look for it:
 - **The air-gapped-compute-node assumption.** Every awkward staging script in the source repo
   exists because cluster compute nodes have no internet. The Spark has internet. Model
   staging becomes a plain download and the staging sbatch files have no analogue.
-- **Multi-tenancy machinery** (per-user state dirs, one-session-per-user guards, the
-  shared-install non-owner write paths). Reduce to whatever the actual user count is — ask
-  (§9). Do not carry per-user isolation the box does not need.
+- **Cluster-scale multi-tenancy machinery** (shared-install non-owner write paths, per-user
+  state dirs sized for a whole campus). Three users (§9.1) need far less than that — but they
+  need more than nothing: authenticated browser chat, per-user usage records, and a model-swap
+  lock. Reduce, do not delete.
 - **`AGENTS.md`.** In the source repo this is *not* a rules file; it is a prompt-level
   workaround for a model that could not emit `<tool_call>` tokens. If the Spark serves models
   with working tool parsers, that file should not exist, and the new `CLAUDE.md` should say
@@ -167,7 +217,6 @@ your summary. Do not silently promote an assumption to a fact.
 | 20-core Arm CPU, **aarch64** | `uname -m`, `lscpu` |
 | DGX OS (Ubuntu-derived), NVIDIA container toolkit present | `cat /etc/os-release`, `docker info \| grep -i runtime`, `nvidia-smi` driver + CUDA version |
 | ~4 TB NVMe | `df -h`, and decide the model-weights budget from what is actually free |
-| dual QSFP ConnectX-7, for pairing two Sparks | `ip link`, `ibstat` if present — only relevant if a second box exists (§9) |
 
 ### The three consequences that reshape every other decision
 
@@ -194,12 +243,20 @@ matter what else is true. The same model at 4-bit (~14 GB) tops out near ~19 tok
 and has a ceiling an order of magnitude higher. Realized rates are typically 40–70 % of the
 ceiling. **Verify these arithmetic examples against measurement before publishing them.**
 
-The design consequence is large and must be stated plainly in the new file: **on the Spark,
-prefer MoE architectures with small active-parameter counts, and prefer quantized weights,
-even at some quality cost.** This *reverses* a source-project conclusion — the cluster
-measured a 30B-A3B MoE as a NO-GO on quality and picked dense models, which was correct on
-A100/H100 where dense 27B decodes fine. That verdict does not transfer. Re-measure, and
-record that you are knowingly overturning it and why.
+The rule that follows from this, and that must appear in the new file: **what governs
+interactive speed here is bytes read per token, not parameter count.** Two consequences, and
+they are not equally available to you:
+
+- **Quantization is mandatory.** Both chosen models are dense (§9.5), so 4-bit weights are the
+  only lever that moves a 4–5 tok/s ceiling into usable range. This is a hard rule, not a
+  preference.
+- **MoE would be the bigger lever, but it is not on the menu.** A ~3B-active MoE at 4-bit
+  reads under 2 GB per token — an order of magnitude better ceiling. The source project
+  measured a 30B-A3B MoE as a quality NO-GO and chose dense models, which was correct on
+  A100/H100 where dense 27B decodes fine and is *not* obviously correct here. The user has
+  chosen two dense models (§9.5); do not overturn that. Record the tradeoff in `CLAUDE.md` as
+  a known, deliberate one, so that if the measured dense rate proves unusable the alternative
+  is already written down with its reasoning.
 
 **(c) Blackwell changes the quantization answer.** The source project recorded a clean NO-GO
 for an NVFP4 checkpoint because the FP4→Marlin repack failed against the cluster's driver 535
@@ -218,13 +275,13 @@ which is the main argument for a container-first install.
 Each of these is a hard rule with a stated reason, in the style of the source file's hardware
 section. Fill in the real numbers from §5.
 
-1. **Memory budget.** The maximum unified-memory fraction any serve may claim, the absolute
-   floor to leave for the OS, and the requirement to measure resident size before adding a
-   model to the served set. One resident model at a time; a second serve must unload the
-   first, not race it.
-2. **TP=1.** One GPU means no tensor parallelism inside the box. Any `--tensor-parallel-size`
-   above 1 is a bug unless a second Spark is paired over ConnectX-7 (§9), in which case say
-   what was actually verified and nothing more.
+1. **Memory budget, stated in gigabytes.** An absolute ceiling for a serve and an absolute
+   floor reserved for the OS — not a utilization fraction, which is what makes this dangerous
+   on unified memory (§5a). Give the fraction only as a derived convenience, if at all.
+   Measuring a model's resident size is a precondition of adding it to the served set.
+2. **TP=1, unconditionally.** One GPU, one box, no second Spark (§9.3). Any
+   `--tensor-parallel-size` above 1 is a bug. Do not document the two-box case as a
+   possibility.
 3. **Container-first install, with a pin.** Name the exact image or wheel set and the CUDA and
    driver versions it was verified against, the way the source project pins its conda env and
    states that it "runs against driver 535 through CUDA minor-version compatibility". State
@@ -242,9 +299,16 @@ section. Fill in the real numbers from §5.
 7. **Thermal and power honesty.** A desk box under sustained load throttles. If sustained
    throughput differs from burst throughput, that is a number users need, and it belongs in
    the file next to the decode rates.
-8. **After any subagent or workflow run, check for orphaned processes.** The source rule is
-   `squeue -u $USER`; here it is stray `vllm serve` processes and containers holding unified
-   memory. Same failure mode, and on one box it blocks everything.
+8. **One resident model, and swapping it takes a lock.** A second serve must unload the
+   first, never race it. With three users (§9.1) a swap is an operation that affects other
+   people: it requires no in-flight requests, it takes an explicit lock, and it is visible.
+   The CLI must be able to answer "what is resident and who is using it".
+9. **Users and access.** Three named users; every listener bound to `127.0.0.1`; browser
+   access over SSH tunnel only; authenticated Open WebUI. Write the tunnel command into the
+   file. No LAN bind, no TLS, no auth proxy — the tunnel is the security boundary (§9.2).
+10. **After any agent, subagent, or background run, check for orphaned processes.** The source
+   rule is `squeue -u $USER`; here it is stray `vllm serve` processes and containers holding
+   unified memory. Same failure mode, and on one box it blocks everyone.
 
 ---
 
@@ -278,7 +342,8 @@ evidence third, related-files last. Suggested sections:
 ### What this rules out        <- the analogue of "everything else is off limits"
 ## Install and pinning         <- container/wheel pin, CUDA/driver, aarch64 constraints
 ## Model policy                <- registry + served set, quantization table, sizing arithmetic
-## Serving fences              <- port ranges, bench- prefix, one-resident-model rule
+## Serving fences              <- port ranges, bench- prefix, one-resident-model rule, swap lock
+## Users and access            <- the three users, 127.0.0.1 binding, SSH tunnel, WebUI auth
 ## Clients                     <- Open WebUI, aider/Continue/opencode, what each needs from the server
 ## Inference as a tool         <- offline batch, structured output, embeddings, MCP
 ## Evidence                    <- the gitignored path and the commit-before-delete rule
@@ -294,41 +359,120 @@ Slurm MCP server (A7). Say which of these were actually verified and which are a
 
 ---
 
-## 9. Ask the user before assuming
+## 9. Decisions the user has already made
 
-These change the design materially and none of them is inferable from the source project:
+These were open questions; they are now answered. Treat them as constraints, not defaults,
+and write each into the new `CLAUDE.md` as a rule with its consequence.
 
-1. **How many people use the box, and how do they reach it?** One person at a desk, or a
-   small group over the network? This decides whether the gateway needs per-user keys, whether
-   Open WebUI keeps `WEBUI_AUTH=False`, and whether usage logging is per-user.
-2. **Remote access posture** — SSH tunnel (as on the cluster), Tailscale/VPN, or LAN-bound?
-   The source project binds everything to `127.0.0.1` and tunnels; a desk box on a LAN invites
-   a looser default that should be a deliberate decision, not a drift.
-3. **Is there a second Spark to pair?** Two boxes over ConnectX-7 change the model-size
-   ceiling. Without a confirmed second box, write TP=1 as an unconditional rule.
-4. **Should the Spark repo reuse this project's code, fork it, or start clean?** The gateway,
-   metering, registry, and MCP servers are portable Python; the launcher and billing are not.
-   A fork inherits the Slurm assumptions silently — that is the risk to name.
-5. **Which models matter most** — coding, general chat, or batch inference? At 128 GB you
-   are choosing, not collecting.
+**1. Three users, internal testing.** Not one person at a desk and not a service. The
+consequences are specific:
 
-Do the parts that do not depend on the answers first. Ask when you reach the parts that do.
+- One resident model and three people means the box **serializes**. Two users wanting
+  different models cannot both be served; a model swap must therefore require no in-flight
+  requests, take a lock, and be visible to the other two. Design the swap as an explicit,
+  announced operation, not something a client triggers implicitly.
+- Continuous batching holds aggregate throughput up under three concurrent users, but
+  **per-user decode rate divides**. On a box whose decode ceiling is already low (§5b),
+  three simultaneous coding sessions will feel materially slower than one. Measure the
+  three-user case, not just the single-user case, and publish both numbers.
+- `WEBUI_AUTH=False` (A5) is a single-user demo posture and is now wrong: three people
+  sharing one unauthenticated Open WebUI share one chat history. This is the same class of
+  bug the source project already fixed once by moving the chat database out of a
+  group-readable tree. **Recommended: one Open WebUI instance with `WEBUI_AUTH=True` and
+  three accounts**, rather than three instances — each instance holds its own embedding model
+  and unified memory is the scarce resource here. Record whichever you choose and why.
+- Usage logging stays, per user, for capacity and for answering "why was it slow at 3pm" —
+  not for chargeback. Three users is enough that "who is holding the model" is a real
+  question the CLI should answer.
+
+**2. SSH tunnel for the web GUI.** Same posture as the cluster: bind every listener to
+`127.0.0.1`, no LAN bind, no VPN dependency, and document the exact tunnel command in the
+user-facing docs the way the source project does. This is the *simplifying* answer — it means
+no TLS, no auth proxy, and no exposure surface beyond SSH itself, which is already how these
+three users reach the box.
+
+**3. No second Spark.** TP=1 is unconditional. Delete the ConnectX-7 branch from the rules
+entirely rather than leaving it as a documented possibility — an aspirational escape hatch in
+a rules file is how `--tensor-parallel-size 2` eventually gets typed. Model sizing is bounded
+by one box's 128 GB, full stop.
+
+**4. Clean repo.** No code is ported from the source project. Appendix A is reference
+material for *what the pieces do and why*, not source to copy. This is the right call and it
+has a cost worth naming in the new `CLAUDE.md`: the gateway, the registry, the metering, and
+the MCP servers get rewritten, and each rewrite is an opportunity to lose a fix that is only
+recorded as a comment in Appendix A. Work through A1's environment list and A6's parser
+routing deliberately rather than rediscovering them.
+
+**5. Two models: Qwen3.8 and Gemma-4, covering inference, chat, and coding.** No separate
+small/fast preset and no general-chat 72B — the same two models serve all three workloads.
+That is a sound choice for a box that can hold one model at a time: fewer swaps, and both
+are strong enough to be the only thing resident.
+
+Two things about this decision need to reach the new `CLAUDE.md` as hard constraints:
+
+- **Confirm the exact checkpoint before sizing anything.** The user named "Qwen 3.8 Max",
+  which is *not* the checkpoint the source project serves — that one is `qwen3.8_27B`
+  (Qwen3.8-27B, dense 27.8B, BF16). Get the exact Hugging Face repository id, parameter
+  count, and weight dtype for both models before writing a single memory number, because on
+  128 GB the difference between a 27B and a larger "Max" variant is the difference between
+  fits-and-serves and does-not-load. If the Max variant exceeds the budget, say so plainly
+  and propose the largest variant that fits rather than quietly substituting one.
+- **Both of these are dense models, which makes quantization mandatory rather than
+  preferred.** §5b's arithmetic applies directly: a dense ~27–31B in BF16 is 55–61 GB of
+  weights read per token, capping decode near 4–5 tok/s at ~273 GB/s — technically resident,
+  practically unusable for interactive coding. The same models at 4-bit read ~14–16 GB and
+  raise the ceiling to roughly 17–19 tok/s. The architectural lever (§5b) is unavailable, so
+  the whole margin has to come from quantization, speculative decoding, and prefix caching.
+  Verify the arithmetic by measurement, and if 4-bit still does not clear a usable
+  interactive rate, that is a finding to report, not to paper over.
+
+One concrete lead: the source project staged **`Gemma-4-31B-it-qat-w4a16`** — a
+quantization-aware-trained 4-bit checkpoint, ~22 GB on disk, which passed a serve-and-accept
+check on a single 48 GB A40. It was deliberately never advertised to cluster users because
+its coding quality is unmeasured and Google publishes no quantized-vs-BF16 comparison. For
+the Spark it is the most promising starting point on record: QAT 4-bit is exactly the shape
+this box wants, and measuring the quality gap that the cluster never needed to measure is now
+worth doing. Treat the unmeasured quality as an open task, not as a reason to skip it.
 
 ---
 
-## 10. Definition of done
+## 10. Definition of done — self-check before reporting
 
-- `CLAUDE.md` exists in the new repo, is under ~200 lines, and every hard rule carries the
-  reason it exists.
-- Every number in it is either measured on the Spark with the command that produced it, or
-  explicitly marked `UNVERIFIED` with the verification command next to it. No number is
-  inherited from the cluster without being re-measured or flagged.
-- Reading it, someone who has never seen the source project can answer: what fits in memory,
-  what parallelism is legal, how to install vLLM reproducibly, what a benchmark run must be
-  named so it cannot be mistaken for production, and where the evidence lives.
-- The three reversals from the cluster are stated as reversals, not silently changed: MoE and
-  quantization are now preferred over dense BF16; FP4 is now viable; there is no billing.
-- Nothing in it depends on Slurm, an account, a partition, or a QOS.
+Run these against the file you wrote. Each is checkable; do not report done on a failing line.
+
+```bash
+# 1. Nothing cluster-shaped survived.
+grep -niE 'slurm|sbatch|squeue|sacct|partition|--qos|service unit|\bSU\b|modulefile|beagle3|midway3' CLAUDE.md
+# expect: no hits
+
+# 2. No parallelism above 1, and no two-box escape hatch.
+grep -niE 'tensor-parallel-size [2-9]|connectx|second spark' CLAUDE.md
+# expect: no hits
+
+# 3. No path into the unreachable source project.
+grep -n '/project/rcc' CLAUDE.md
+# expect: no hits
+
+# 4. Every unverified number is labelled as one.
+grep -nc 'UNVERIFIED' CLAUDE.md
+# expect: 0 if you measured everything on the box; otherwise one per unmeasured number
+```
+
+Then read it as the agent who will be governed by it, and confirm each of these:
+
+- It is under ~200 lines and every hard rule carries the reason it exists.
+- Each number is either measured, with the command that produced it, or marked `UNVERIFIED`
+  with the command that would settle it. No number is inherited from the cluster unmarked.
+- The memory budget is in gigabytes and appears before any other rule.
+- A reader who has never seen the source project can answer: what fits in memory, why TP is
+  fixed at 1, how to install vLLM reproducibly, what a benchmark run must be named so it
+  cannot be mistaken for production, who may reach the box and how, and where evidence lives.
+- The three reversals from the cluster are stated as reversals, not silently applied: FP4 is
+  viable on sm_121; there is no billing; quantization is mandatory rather than optional.
+- §9's five decisions each appear as a rule with its consequence, not as background.
+
+Report to the user: the file's location, which §5 numbers you measured versus assumed, any
+STOP condition you hit, and anything in §9.5 you could not pin down.
 
 ## House style
 
@@ -437,6 +581,10 @@ ai-session receipt   re-print the newest usage receipt
 ai-session mcp config | mcp run NAME
 ai-session stop      stop, free the GPUs, print the charge
 ```
+
+This verb list is the source project's, not a specification: `fast` has no model behind it
+under the two-model decision (§9.5) and `receipt` is billing, which does not exist here (§4).
+Copy the *shape* — short intent verbs, no paths, no flags for the common case.
 
 After a session comes up, the dispatcher writes `~/.ai-session/env`, mode 600, containing
 exactly three variables: `AISESSION_BASE_URL`, `AISESSION_API_KEY`, `AISESSION_MODEL`. Every
